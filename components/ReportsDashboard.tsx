@@ -97,9 +97,9 @@ const ReportsDashboard: React.FC = () => {
       const totalPagesExp = '{total_pages_count_string}';
       
       // Cores da Marca
-      const colorYellow = [255, 214, 0]; // #FFD600
-      const colorDark = [17, 24, 39];    // #111827
-      const colorGray = [243, 244, 246]; // #F3F4F6
+      const colorYellow: [number, number, number] = [255, 214, 0]; // #FFD600
+      const colorDark: [number, number, number] = [17, 24, 39];    // #111827
+      const colorGray: [number, number, number] = [243, 244, 246]; // #F3F4F6
 
       // --- HEADER ---
       // Barra Lateral Amarela
@@ -561,9 +561,18 @@ const ReportsDashboard: React.FC = () => {
 
                 <div className="bg-white dark:bg-zinc-800 rounded-xl shadow-sm border border-gray-200 dark:border-zinc-700 overflow-hidden animate-enter" style={{ animationDelay: '300ms' }}>
                     <div className="px-6 py-5 border-b border-gray-100 dark:border-zinc-700 bg-gray-50/50 dark:bg-zinc-800/50"><h3 className="font-bold text-lg text-gray-800 dark:text-white flex items-center gap-2"><Users size={20} className="text-gray-500 dark:text-gray-400" />Produtividade da Equipe (Sobre seleção atual)</h3></div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left whitespace-nowrap">
-                            <thead className="bg-white dark:bg-zinc-900 text-gray-500 dark:text-gray-400 font-semibold text-xs uppercase tracking-wider border-b border-gray-100 dark:border-zinc-700"><tr><th className="px-6 py-4">Colaborador</th><th className="px-4 py-4 text-center text-gray-400 w-32"><Building2 size={14} className="mx-auto mb-1"/>Real</th><th className="px-4 py-4 text-center text-gray-400 w-32"><Building2 size={14} className="mx-auto mb-1 text-lm-yellow"/>Presumido</th><th className="px-4 py-4 text-center text-gray-400 w-32"><Building2 size={14} className="mx-auto mb-1 text-blue-500"/>Simples</th><th className="px-6 py-4 text-center">Total</th><th className="px-6 py-4 text-center">Progresso</th></tr></thead>
+                    <div className="overflow-x-auto max-h-[500px] overflow-y-auto custom-scrollbar">
+                        <table className="w-full text-left whitespace-nowrap border-separate border-spacing-0">
+                            <thead className="bg-white dark:bg-zinc-900 text-gray-500 dark:text-gray-400 font-semibold text-xs uppercase tracking-wider border-b border-gray-100 dark:border-zinc-700 sticky top-0 z-10 shadow-sm">
+                                <tr>
+                                    <th className="px-6 py-4 bg-white dark:bg-zinc-900">Colaborador</th>
+                                    <th className="px-4 py-4 text-center text-gray-400 w-32 bg-white dark:bg-zinc-900"><Building2 size={14} className="mx-auto mb-1"/>Real</th>
+                                    <th className="px-4 py-4 text-center text-gray-400 w-32 bg-white dark:bg-zinc-900"><Building2 size={14} className="mx-auto mb-1 text-lm-yellow"/>Presumido</th>
+                                    <th className="px-4 py-4 text-center text-gray-400 w-32 bg-white dark:bg-zinc-900"><Building2 size={14} className="mx-auto mb-1 text-blue-500"/>Simples</th>
+                                    <th className="px-6 py-4 text-center bg-white dark:bg-zinc-900">Total</th>
+                                    <th className="px-6 py-4 text-center bg-white dark:bg-zinc-900">Progresso</th>
+                                </tr>
+                            </thead>
                             <tbody className="divide-y divide-gray-50 dark:divide-zinc-700">{stats.teamStats.map((member) => (<tr key={member.name} className="hover:bg-gray-50 dark:hover:bg-zinc-700/50 transition-colors"><td className="px-6 py-4 font-medium text-gray-900 dark:text-white"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-lm-yellow/20 dark:bg-lm-yellow/10 flex items-center justify-center text-xs font-bold text-lm-dark dark:text-lm-yellow">{member.name.charAt(0)}</div>{member.name}</div></td><td className="px-4 py-4 text-center font-mono text-xs"><span className={member.breakdown.real.total > 0 ? "text-gray-800 dark:text-gray-200 font-bold" : "text-gray-300 dark:text-zinc-600"}>{member.breakdown.real.finished} / {member.breakdown.real.total}</span></td><td className="px-4 py-4 text-center font-mono text-xs"><span className={member.breakdown.presumido.total > 0 ? "text-gray-800 dark:text-gray-200 font-bold" : "text-gray-300 dark:text-zinc-600"}>{member.breakdown.presumido.finished} / {member.breakdown.presumido.total}</span></td><td className="px-4 py-4 text-center font-mono text-xs"><span className={member.breakdown.simples.total > 0 ? "text-gray-800 dark:text-gray-200 font-bold" : "text-gray-300 dark:text-zinc-600"}>{member.breakdown.simples.finished} / {member.breakdown.simples.total}</span></td><td className="px-6 py-4 text-center text-gray-600 dark:text-gray-300 font-mono text-sm font-bold bg-gray-50/50 dark:bg-zinc-900/50">{member.finished} <span className="text-gray-400 font-normal">/</span> {member.total}</td><td className="px-6 py-4"><div className="flex items-center gap-3"><div className="flex-1 w-24 bg-gray-100 dark:bg-zinc-600 h-1.5 rounded-full overflow-hidden"><div className={`h-1.5 rounded-full ${member.percentage === 100 ? 'bg-green-500' : 'bg-lm-yellow'}`} style={{ width: `${member.percentage}%` }}></div></div><span className="text-xs font-bold text-gray-500 dark:text-gray-400 w-8 text-right">{member.percentage}%</span></div></td></tr>))}</tbody>
                         </table>
                     </div>
