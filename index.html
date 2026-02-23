@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>L&M Controle</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Inter', sans-serif;
+        background-color: #F3F4F6; 
+        color: #111827;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      /* Dark Mode Global Overrides - "Preto Mesmo" (True Black) */
+      .dark body {
+        background-color: #000000; /* Pure Black */
+        color: #FAFAFA;
+      }
+
+      /* --- VIEW TRANSITION ANIMATIONS (Optimized Scale & Fade) --- */
+      /* Substituímos o Blur pesado por um Zoom sutil que é muito mais leve (GPU friendly) */
+      
+      ::view-transition-group(root) {
+        animation-duration: 0.4s;
+        animation-timing-function: cubic-bezier(0.2, 0, 0.2, 1); /* Ease-in-out suave */
+      }
+
+      ::view-transition-old(root) {
+        animation: 
+          0.4s cubic-bezier(0.2, 0, 0.2, 1) both fade-out,
+          0.4s cubic-bezier(0.2, 0, 0.2, 1) both scale-down;
+        z-index: 1;
+        transform-origin: center center;
+      }
+      
+      ::view-transition-new(root) {
+        animation: 
+          0.4s cubic-bezier(0.2, 0, 0.2, 1) both fade-in,
+          0.4s cubic-bezier(0.2, 0, 0.2, 1) both scale-up;
+        z-index: 2;
+        transform-origin: center center;
+        mix-blend-mode: normal;
+      }
+
+      /* Keyframes otimizados para 60fps+ */
+      @keyframes fade-out {
+        from { opacity: 1; }
+        to { opacity: 0; }
+      }
+      @keyframes fade-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      @keyframes scale-down {
+        from { transform: scale(1); }
+        to { transform: scale(0.96); } /* Zoom out sutil */
+      }
+      @keyframes scale-up {
+        from { transform: scale(1.04); } /* Zoom in sutil */
+        to { transform: scale(1); }
+      }
+
+      /* Modern Scrollbar */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #D1D5DB;
+        border-radius: 999px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #9CA3AF;
+      }
+
+      /* Dark Mode Scrollbar */
+      .dark ::-webkit-scrollbar-track {
+        background: #000000;
+      }
+      .dark ::-webkit-scrollbar-thumb {
+        background: #333333;
+      }
+      .dark ::-webkit-scrollbar-thumb:hover {
+        background: #555555;
+      }
+
+      /* Utilities */
+      .glass {
+        background: rgba(255, 255, 255, 0.7);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+      }
+      
+      .dark .glass {
+        background: rgba(0, 0, 0, 0.7);
+      }
+      
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+
+      /* --- NEW PROFESSIONAL ANIMATIONS (FASTER) --- */
+      
+      :root {
+        --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.1);
+        --ease-out: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
+        --ease-authentic: cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+
+      /* Subtle Fade Up - Used for Generic Lists */
+      @keyframes fadeUp {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      /* Smooth Slide In from Right - Used for Drawer */
+      @keyframes slideInRight {
+        from { transform: translateX(100%); }
+        to { transform: translateX(0); }
+      }
+      
+      /* Smooth Slide Up - Used for Toasts */
+      @keyframes slideUp {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      /* --- NEW: Smoother Column Entry (Updated) --- */
+      @keyframes columnEnter {
+        0% { 
+          opacity: 0; 
+          transform: translateY(20px) scale(0.99); 
+        }
+        100% { 
+          opacity: 1; 
+          transform: translateY(0) scale(1); 
+        }
+      }
+
+      /* --- NEW: Depth Appearance (Updated for Team/Overview) --- */
+      @keyframes depthAppear {
+        0% { 
+          opacity: 0; 
+          transform: scale(0.98) translateY(5px); 
+          filter: blur(2px);
+        }
+        100% { 
+          opacity: 1; 
+          transform: scale(1) translateY(0); 
+          filter: blur(0);
+        }
+      }
+
+      /* --- NEW: Pop In for Filters (Snappy) --- */
+      @keyframes popIn {
+        0% { opacity: 0; transform: scale(0.96) translateY(-2px); }
+        100% { opacity: 1; transform: scale(1) translateY(0); }
+      }
+
+      .animate-enter {
+        animation: fadeUp 0.3s var(--ease-smooth) both;
+      }
+
+      .animate-pop-in {
+        animation: popIn 0.3s var(--ease-authentic) both;
+      }
+
+      .animate-column-enter {
+        animation: columnEnter 0.4s var(--ease-authentic) both;
+        will-change: transform, opacity;
+      }
+
+      .animate-depth-appear {
+        animation: depthAppear 0.4s var(--ease-authentic) both;
+        will-change: transform, opacity, filter;
+      }
+
+      .animate-slide-in-right {
+        animation: slideInRight 0.3s var(--ease-smooth) forwards;
+      }
+
+      .animate-slide-up-toast {
+        animation: slideUp 0.3s var(--ease-smooth) forwards;
+      }
+
+      /* --- SCROLL REVEAL OPTIMIZED FOR PERFORMANCE --- */
+      /* Made simpler and faster to avoid ghosting during drag operations */
+      .card-scroll-initial {
+        opacity: 0;
+        transform: translateY(10px);
+        will-change: opacity, transform;
+        transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+      }
+
+      .card-scroll-visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      /* DATE PICKER FULL CLICK HACK */
+      .date-input-full::-webkit-calendar-picker-indicator {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        opacity: 0;
+        cursor: pointer;
+      }
+
+    </style>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+            },
+            colors: {
+              lm: {
+                yellow: '#FFD600', 
+                yellowLight: '#FFF9C4',
+                dark: '#111827',
+                gray: '#F3F4F6',
+                accent: '#2563EB',
+              }
+            },
+            boxShadow: {
+              'soft': '0 2px 10px rgba(0, 0, 0, 0.03)',
+              'card': '0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.02)',
+              'hover': '0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025)',
+            }
+          }
+        }
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.1",
+    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+    "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.556.0",
+    "jspdf": "https://aistudiocdn.com/jspdf",
+    "jspdf-autotable": "https://aistudiocdn.com/jspdf-autotable"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+  <script type="module" src="./index.tsx"></script>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
