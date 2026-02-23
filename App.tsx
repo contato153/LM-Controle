@@ -96,7 +96,7 @@ const App: React.FC = () => {
 
   const [activeView, setActiveView] = useState('kanban'); 
   const [currentDept, setCurrentDept] = useState<Department>(Department.FISCAL);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 1024);
   const [activeSubView, setActiveSubView] = useState<'LUCRO' | 'REINF' | 'BALANCETE' | 'BALANCO'>('BALANCETE');
   const [selectedTask, setSelectedTask] = useState<CompanyTask | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -324,7 +324,7 @@ const App: React.FC = () => {
           </div>
       </div>
 
-      <div className="flex-1 overflow-x-auto overflow-y-hidden p-8 pt-4">
+      <div className="flex-1 overflow-x-auto overflow-y-hidden p-4 lg:p-8 pt-4">
             {currentDept === Department.TODOS ? (
                 <OverviewTable 
                     tasks={filteredTasks} 

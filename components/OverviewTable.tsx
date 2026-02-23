@@ -358,17 +358,17 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ tasks, onNavigate, onTask
             onScroll={handleScroll}
             className="overflow-auto flex-1 custom-scrollbar pb-20 relative"
         >
-            <table className="w-full text-left whitespace-nowrap table-fixed border-separate border-spacing-0">
+            <table className="w-full min-w-[1400px] text-left whitespace-nowrap table-fixed border-separate border-spacing-0">
                 <thead className="bg-gray-50/95 dark:bg-zinc-900/95 backdrop-blur-sm sticky top-0 z-20 border-b border-gray-200 dark:border-zinc-700 shadow-sm">
                     <tr>
-                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[4%] text-center border-b border-gray-200 dark:border-zinc-700`}>ID</th>
-                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[8%] text-center border-b border-gray-200 dark:border-zinc-700`}>Prioridade</th>
-                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[9%] text-center border-b border-gray-200 dark:border-zinc-700`}>Regime</th>
-                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[15%] border-b border-gray-200 dark:border-zinc-700`}>Empresa</th>
-                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[13.5%] border-b border-gray-200 dark:border-zinc-700`}><div>Fiscal</div><div className="text-[9px] text-gray-300 dark:text-gray-600 font-normal mt-0.5 normal-case">Dept. Fiscal</div></th>
-                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[13.5%] border-b border-gray-200 dark:border-zinc-700`}><div>Contábil</div><div className="text-[9px] text-gray-300 dark:text-gray-600 font-normal mt-0.5 normal-case">Balancete & Balanço</div></th>
-                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[13.5%] border-b border-gray-200 dark:border-zinc-700`}><div>Reinf / Lucro</div><div className="text-[9px] text-gray-300 dark:text-gray-600 font-normal mt-0.5 normal-case">Dept. Fiscal & Contábil</div></th>
-                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[13.5%] border-b border-gray-200 dark:border-zinc-700`}><div>ECD / ECF</div><div className="text-[9px] text-gray-300 dark:text-gray-600 font-normal mt-0.5 normal-case">Dept. Contábil</div></th>
+                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[3%] text-center border-b border-gray-200 dark:border-zinc-700`}>ID</th>
+                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[7%] text-center border-b border-gray-200 dark:border-zinc-700`}>Prioridade</th>
+                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[8%] text-center border-b border-gray-200 dark:border-zinc-700`}>Regime</th>
+                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[20%] border-b border-gray-200 dark:border-zinc-700`}>Empresa</th>
+                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[13%] border-b border-gray-200 dark:border-zinc-700`}><div>Fiscal</div><div className="text-[9px] text-gray-300 dark:text-gray-600 font-normal mt-0.5 normal-case">Dept. Fiscal</div></th>
+                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[13%] border-b border-gray-200 dark:border-zinc-700`}><div>Contábil</div><div className="text-[9px] text-gray-300 dark:text-gray-600 font-normal mt-0.5 normal-case">Balancete & Balanço</div></th>
+                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[13%] border-b border-gray-200 dark:border-zinc-700`}><div>Reinf / Lucro</div><div className="text-[9px] text-gray-300 dark:text-gray-600 font-normal mt-0.5 normal-case">Dept. Fiscal & Contábil</div></th>
+                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[13%] border-b border-gray-200 dark:border-zinc-700`}><div>ECD / ECF</div><div className="text-[9px] text-gray-300 dark:text-gray-600 font-normal mt-0.5 normal-case">Dept. Contábil</div></th>
                         <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider text-right w-[10%] border-b border-gray-200 dark:border-zinc-700`}>Última Alteração</th>
                     </tr>
                 </thead>
