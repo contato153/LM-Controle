@@ -14,8 +14,8 @@ dist-ssr
 
 # Google Sheets Integration
 config/sheetConfig.ts
-config/credentials.ts
-services/sheetService.ts
+# config/credentials.ts  (credentials may be provided via environment variables)
+# services/sheetService.ts  <-- now tracked so Vercel builds can resolve the import
 services/migrationService.ts
 
 # Editor directories and files
