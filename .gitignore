@@ -13,7 +13,7 @@ dist-ssr
 *.local
 
 # Google Sheets Integration
-config/sheetConfig.ts
+# config/sheetConfig.ts  (values may be provided via environment variables)
 # config/credentials.ts  (credentials may be provided via environment variables)
 # services/sheetService.ts  <-- now tracked so Vercel builds can resolve the import
 services/migrationService.ts
