@@ -6,7 +6,7 @@ import { Department, CompanyTask } from '../types';
 import { useTasks } from '../contexts/TasksContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { migrateFromSheetsToSupabase, MigrationOptions } from '../services/migrationService';
+import { migrateFromSheetsToSupabase, MigrationOptions } from '@/services';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
