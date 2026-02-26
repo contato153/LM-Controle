@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Google Sheets Integration
+config/sheetConfig.ts
+config/credentials.ts
+services/sheetService.ts
+services/migrationService.ts
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

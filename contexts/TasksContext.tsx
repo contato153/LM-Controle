@@ -3,7 +3,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { CompanyTask, Collaborator, UserSettings, Department, AppNotification, isFiscalFinished } from '../types';
-import { fetchAllDataBatch, updateTaskStatus, logChange, getUserSettings, saveUserSettings, fetchNotifications, markNotificationAsRead } from '../services/sheetService';
 import { 
   fetchAllDataSupabase, 
   updateTaskStatusSupabase, 
@@ -152,10 +151,8 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (USE_SUPABASE && supabase) {
         const { tasks } = await fetchAllDataSupabase(activeYear);
         return tasks;
-      } else {
-        const data = await fetchAllDataBatch();
-        return data.tasks;
       }
+      return [];
     },
     enabled: !!currentUser,
     refetchInterval: settings.autoRefresh ? 30000 : false,
@@ -183,8 +180,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             deleted_at: c.deleted_at
         }));
       }
-      const data = await fetchAllDataBatch();
-      return data.collaborators;
+      return [];
     },
     enabled: !!currentUser,
     staleTime: 1000 * 60 * 5, // 5 minutes
@@ -203,22 +199,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             l.empresa_id || ''
         ]);
       }
-      const data = await fetchAllDataBatch();
-      // Sort logs descending (newest first) for Sheets
-      const sortedLogs = [...(data.logs || [])].sort((a, b) => {
-          const parseDate = (s: string) => {
-              try {
-                  if (!s) return 0;
-                  const cleanStr = s.replace(',', '').trim();
-                  const [d, t] = cleanStr.split(' ');
-                  const [day, month, year] = d.split('/').map(Number);
-                  const [h, m, s_] = t.split(':').map(Number);
-                  return new Date(year, month - 1, day, h, m, s_ || 0).getTime();
-              } catch (e) { return 0; }
-          };
-          return parseDate(b[0]) - parseDate(a[0]);
-      });
-      return sortedLogs;
+      return [];
     },
     enabled: !!currentUser,
     staleTime: 1000 * 30, // 30 seconds
@@ -240,9 +221,8 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (!currentUser) return [];
       if (USE_SUPABASE && supabase) {
         return await fetchNotificationsSupabase(currentUser.name, activeYear);
-      } else {
-        return await fetchNotifications(currentUser.name);
       }
+      return [];
     },
     enabled: !!currentUser,
     refetchInterval: settings.autoRefresh ? 30000 : false,
@@ -255,9 +235,8 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (!currentUser) return null;
       if (USE_SUPABASE && supabase) {
         return await getUserSettingsSupabase(currentUser.id);
-      } else {
-        return await getUserSettings(currentUser.id);
       }
+      return null;
     },
     enabled: !!currentUser,
   });

@@ -1,7 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Collaborator } from '../types';
-import { fetchAllDataBatch } from '../services/sheetService';
 import { fetchAllDataSupabase, updateUserPresenceSupabase } from '../services/supabaseService';
 import { supabase } from '../services/supabaseClient';
 import { ADMIN_IDS, USE_SUPABASE } from '../config/app';
@@ -102,19 +101,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
           // Fetch simple batch to verify user exists
           let collaborators: Collaborator[] = [];
-          let usedSupabase = false;
           
           if (USE_SUPABASE && supabase) {
               const data = await fetchAllDataSupabase();
               collaborators = data.collaborators;
-              usedSupabase = true;
-          } 
-          
-          // Fallback to Sheets if Supabase is disabled, missing, or empty (to allow migration)
-          if (collaborators.length === 0) {
-              const data = await fetchAllDataBatch();
-              collaborators = data.collaborators;
-              usedSupabase = false;
+          } else {
+              throw new Error("Supabase não está configurado.");
           }
 
           const user = collaborators.find(c => c.id === id);
@@ -125,12 +117,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }
               setCurrentUser(user);
               localStorage.setItem('lm_user', JSON.stringify(user));
-              if (usedSupabase && USE_SUPABASE) {
-                  console.log("Logged in via Supabase");
-                  updateUserPresenceSupabase(user.id).catch(console.error);
-              } else if (USE_SUPABASE) {
-                  console.log("Logged in via Sheets (Fallback for migration)");
-              }
+              console.log("Logged in via Supabase");
+              updateUserPresenceSupabase(user.id).catch(console.error);
               return true;
           }
           return false;
