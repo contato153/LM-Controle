@@ -5,6 +5,7 @@ import KanbanCard from './KanbanCard';
 import { useTasks } from '../contexts/TasksContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { AnimatePresence } from 'framer-motion';
 
 interface KanbanColumnProps {
   id: string;
@@ -30,7 +31,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
   responsibleField
 }) => {
   const { updateTask, settings, tasks: allTasks } = useTasks();
-  const { isAdmin, currentUser } = useAuth();
+  const { isAdmin, isEffectiveAdmin, currentUser } = useAuth();
   const { addNotification } = useToast();
   
   const storageKey = `lm_kanban_scroll_${activeView}_${currentDept}_${id}`;
@@ -39,7 +40,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
 
   // Constantes de Virtualização
   // Estimativa de altura do card + margens baseada na densidade
-  const ITEM_HEIGHT = settings.density === 'compact' ? 142 : 195; 
+  const ITEM_HEIGHT = settings.density === 'compact' ? 120 : 160; 
   const OVERSCAN = 3; // Renderizar 3 itens acima/abaixo da área visível para scroll suave
 
   const [scrollTop, setScrollTop] = useState(0);
@@ -104,32 +105,65 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
       return { visibleTasks: visible, paddingTop: padTop, paddingBottom: padBottom };
   }, [tasks, scrollTop, containerHeight, ITEM_HEIGHT]);
 
+  const [isOver, setIsOver] = useState(false);
+
   const onDragStart = useCallback((e: React.DragEvent<HTMLDivElement>, id: string) => {
     e.dataTransfer.setData("taskId", id);
+    e.dataTransfer.effectAllowed = "move";
   }, []);
 
   const onDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>, newStatus: string) => {
     e.preventDefault();
     e.stopPropagation();
+    setIsOver(false);
     const taskId = e.dataTransfer.getData("taskId");
+    if (!taskId) return;
+
     const task = allTasks.find(t => t.id === taskId);
     
     if (task && task[statusField] !== newStatus) {
       // Se for admin movendo uma tarefa sem responsável, auto-atribuir
       const currentResponsible = task[responsibleField] as string;
-      if (!currentResponsible && isAdmin && currentUser) {
+      if (!currentResponsible && isEffectiveAdmin && currentUser) {
           addNotification("Atribuição Automática", `Você foi definido como responsável.`, "info");
           await updateTask(task, responsibleField, currentUser.name);
       }
 
       await updateTask(task, statusField, newStatus);
     }
-  }, [allTasks, statusField, responsibleField, isAdmin, currentUser, updateTask, addNotification]);
+  }, [allTasks, statusField, responsibleField, isEffectiveAdmin, currentUser, updateTask, addNotification]);
+
+  const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    if (!isOver) setIsOver(true);
+  }, [isOver]);
+
+  const onDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isOver) setIsOver(true);
+  }, [isOver]);
+
+  const onDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Check if we are leaving to a child element
+    if (e.currentTarget.contains(e.relatedTarget as Node)) {
+        return;
+    }
+    
+    setIsOver(false);
+  }, []);
 
   return (
     <div 
-        className={`flex-shrink-0 w-80 lg:w-[340px] flex flex-col h-full rounded-2xl bg-gray-100/50 dark:bg-[#09090b] border border-gray-200/60 dark:border-zinc-800 transition-colors ${settings.reduceMotion ? '' : 'duration-300'} animate-column-enter group/column`}
-        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        className={`flex-shrink-0 w-80 lg:w-[340px] flex flex-col h-full rounded-2xl bg-gray-100/50 dark:bg-[#09090b] border ${isOver ? 'border-lm-yellow ring-2 ring-lm-yellow/20 bg-lm-yellow/5' : 'border-gray-200/60 dark:border-zinc-800'} animate-column-enter group/column`}
+        onDragOver={onDragOver}
+        onDragEnter={onDragEnter}
+        onDragLeave={onDragLeave}
         onDrop={(e) => onDrop(e, id)}
     >
         <div className="p-4 flex items-center justify-between sticky top-0 bg-gray-100/50 dark:bg-[#09090b] backdrop-blur-sm rounded-t-2xl z-10 pointer-events-none">
@@ -145,9 +179,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
         <div 
             ref={containerRef}
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto px-3 pb-4 custom-scrollbar transition-colors group-hover/column:bg-gray-200/30 dark:group-hover/column:bg-zinc-800/30 rounded-b-2xl relative"
-            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-            onDrop={(e) => onDrop(e, id)}
+            className="flex-1 overflow-y-auto px-3 pb-4 custom-scrollbar transition-colors group-hover/column:bg-gray-200/30 dark:group-hover/column:bg-zinc-800/30 rounded-b-2xl relative min-h-[150px]"
         >
             {tasks.length === 0 ? (
                 <div className="h-24 flex items-center justify-center border-2 border-dashed border-gray-200 dark:border-zinc-800 rounded-xl m-2 opacity-50 pointer-events-none">
@@ -159,17 +191,19 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
                     <div style={{ height: paddingTop, width: '100%', flexShrink: 0 }}></div>
                     
                     {/* Itens Renderizados (Apenas os visíveis) */}
-                    {visibleTasks.map(task => (
-                        <KanbanCard 
-                            key={task.id} 
-                            task={task} 
-                            currentDept={currentDept}
-                            onDragStart={onDragStart}
-                            density={settings.density}
-                            onClick={onCardClick}
-                            responsibleField={responsibleField}
-                        />
-                    ))}
+                    <AnimatePresence>
+                        {visibleTasks.map(task => (
+                            <KanbanCard 
+                                key={task.id} 
+                                task={task} 
+                                currentDept={currentDept}
+                                onDragStart={onDragStart}
+                                density={settings.density}
+                                onClick={onCardClick}
+                                responsibleField={responsibleField}
+                            />
+                        ))}
+                    </AnimatePresence>
 
                     {/* Espaçador Inferior */}
                     <div style={{ height: paddingBottom, width: '100%', flexShrink: 0 }}></div>

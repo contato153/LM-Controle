@@ -2,9 +2,25 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, CheckSquare, Plus, Trash2, Save, Loader2, AlignLeft, History, CalendarClock, User, MessageSquare, Send, Calendar, MoreVertical, Edit2, Check, Image as ImageIcon, Eye, EyeOff, Paperclip, ChevronDown } from 'lucide-react';
-import { CompanyTask, TaskDetail, ChecklistItem, TaskComment, getEffectivePriority, Collaborator } from '../types';
+import EmojiPicker, { EmojiClickData, Theme as EmojiTheme } from 'emoji-picker-react';
+import { X, CheckSquare, Plus, Trash2, Save, Loader2, AlignLeft, History, CalendarClock, User, MessageSquare, Send, Calendar, MoreVertical, Edit2, Check, Image as ImageIcon, Eye, EyeOff, Paperclip, ChevronDown, Smile, CornerDownRight, AlertTriangle } from 'lucide-react';
+import { CompanyTask, TaskDetail, ChecklistItem, TaskComment, getEffectivePriority, Collaborator, isFiscalFinished } from '../types';
 import { saveTaskDetail, fetchTaskDetail, fetchLogs, fetchComments, saveComment, updateComment, deleteComment, sendNotification } from '../services/sheetService';
+import { 
+    fetchTaskDetailSupabase, 
+    saveTaskDetailSupabase, 
+    fetchLogsSupabase, 
+    fetchCommentsSupabase, 
+    saveCommentSupabase, 
+    sendNotificationSupabase,
+    updateCommentSupabase,
+    deleteCommentSupabase,
+    fetchCommentsPaginatedSupabase,
+    fetchLogsPaginatedSupabase,
+    toggleCommentReactionSupabase
+} from '../services/supabaseService';
+import { supabase } from '../services/supabaseClient';
+import { USE_SUPABASE } from '../config/app';
 import { useAuth } from '../contexts/AuthContext';
 import { useTasks } from '../contexts/TasksContext';
 
@@ -61,14 +77,15 @@ const getInitials = (name: string) => {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
 
-// --- HELPER: Rich Text Renderer (Markdown Images + Mentions) ---
+// --- HELPER: Rich Text Renderer (Markdown Images + Mentions + Links + Files) ---
 const RichTextRenderer: React.FC<{ text: string }> = ({ text }) => {
     if (!text) return null;
 
     // Regex para capturar Imagens Markdown: ![alt](url)
+    // Regex para capturar Links Markdown: [alt](url)
     // Regex para capturar Menções: @Nome
-    // Dividimos o texto em partes para renderizar
-    const parts = text.split(/(!\[.*?\]\(.*?\)|@[\wÀ-ÿ]+(?: [\wÀ-ÿ]+)?)/g);
+    // Regex para capturar URLs soltas
+    const parts = text.split(/(!\[.*?\]\(.*?\)|\[.*?\]\(.*?\)|@[\wÀ-ÿ]+(?: [\wÀ-ÿ]+)?|https?:\/\/[^\s]+)/g);
 
     return (
         <span className="whitespace-pre-wrap break-words break-all md:break-word leading-relaxed text-gray-800 dark:text-gray-200">
@@ -88,7 +105,26 @@ const RichTextRenderer: React.FC<{ text: string }> = ({ text }) => {
                     );
                 }
 
-                // Render Mention (Estilo Aprimorado)
+                // Render File/Link Markdown [name](url)
+                const linkMatch = part.match(/^\[(.*?)\]\((.*?)\)$/);
+                if (linkMatch) {
+                    const isBase64 = linkMatch[2].startsWith('data:');
+                    return (
+                        <a 
+                            key={i} 
+                            href={linkMatch[2]} 
+                            download={isBase64 ? linkMatch[1] : undefined}
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="inline-flex items-center gap-1.5 px-2 py-1 my-1 rounded-lg bg-gray-100 dark:bg-zinc-800 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-gray-200 dark:border-zinc-700 transition-colors font-medium text-xs"
+                        >
+                            <Paperclip size={12} />
+                            {linkMatch[1]}
+                        </a>
+                    );
+                }
+
+                // Render Mention
                 const mentionMatch = part.match(/^@([\wÀ-ÿ]+(?: [\wÀ-ÿ]+)?)/);
                 if (mentionMatch) {
                     return (
@@ -98,15 +134,15 @@ const RichTextRenderer: React.FC<{ text: string }> = ({ text }) => {
                     );
                 }
 
-                // Render URLs (Simple Link detection)
+                // Render Raw URLs
                 const urlMatch = part.match(/^(https?:\/\/[^\s]+)/);
-                 if (urlMatch) {
-                     return (
-                         <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline break-all font-medium">
-                             {part}
-                         </a>
-                     )
-                 }
+                if (urlMatch) {
+                    return (
+                        <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline break-all font-medium">
+                            {part}
+                        </a>
+                    );
+                }
 
                 return part;
             })}
@@ -115,9 +151,16 @@ const RichTextRenderer: React.FC<{ text: string }> = ({ text }) => {
 };
 
 // --- HELPER: Date Conversion ---
+const parseBrDate = (str: string) => {
+    if (!str) return null;
+    const [day, month, year] = str.split('/');
+    return new Date(Number(year), Number(month) - 1, Number(day));
+};
+
 const toIsoDate = (brDate?: string) => {
     if (!brDate || brDate.length !== 10) return '';
     const [day, month, year] = brDate.split('/');
+    if (year.startsWith('00')) return `20${year.substring(2)}-${month}-${day}`;
     return `${year}-${month}-${day}`;
 };
 
@@ -128,6 +171,25 @@ const toBrDate = (isoDate: string) => {
 };
 
 const formatLogDescription = (description: string) => {
+  // Handle "Alterou X para Y" format (New)
+  const newRegex = /Alterou (.*?) para "(.*?)"/;
+  const newMatch = description.match(newRegex);
+  if (newMatch) {
+      const [, field, value] = newMatch;
+      if (!value || value === '""') {
+           return (
+              <span className="flex items-center gap-1 flex-wrap">
+                  Removeu o <strong className="text-gray-900 dark:text-white font-bold">{field}</strong>
+              </span>
+          );
+      }
+      return (
+          <span className="flex items-center gap-1 flex-wrap">
+              Alterou <strong className="text-gray-900 dark:text-white font-bold">{field}</strong> para <strong className="text-lm-yellow-dark dark:text-lm-yellow font-bold">"{value}"</strong>
+          </span>
+      );
+  }
+
   const regex = /Alteração em \[.*?\]:\s*(\w+)\s*->\s*(.*)/;
   const match = description.match(regex);
 
@@ -135,12 +197,25 @@ const formatLogDescription = (description: string) => {
 
   const [, field, value] = match;
   const fieldMap: Record<string, string> = {
-    respFiscal: 'Responsável Fiscal', statusFiscal: 'Status Fiscal',
-    respContabil: 'Responsável Contábil', statusContabil: 'Status Contábil',
-    statusLucro: 'Distribuição de Lucro', statusReinf: 'Status Reinf',
-    statusECD: 'Status ECD', statusECF: 'Status ECF', respECF: 'Resp. ECD/ECF',
-    prioridade: 'Prioridade', regime: 'Regime', cnpj: 'CNPJ',
-    dueDate: 'Data de Vencimento', name: 'Nome da Empresa'
+    respFiscal: 'Responsável Fiscal', 
+    statusFiscal: 'Status Fiscal',
+    respContabil: 'Responsável Contábil (Balancete)', 
+    statusContabil: 'Status Contábil (Balancete)',
+    respBalanco: 'Responsável Contábil (Balanço)',
+    statusBalanco: 'Status Contábil (Balanço)',
+    respLucro: 'Responsável Lucro',
+    statusLucro: 'Status Lucro', 
+    respReinf: 'Responsável Reinf',
+    statusReinf: 'Status Reinf',
+    respECD: 'Responsável ECD',
+    statusECD: 'Status ECD', 
+    respECF: 'Responsável ECF',
+    statusECF: 'Status ECF', 
+    prioridade: 'Prioridade', 
+    regime: 'Regime', 
+    cnpj: 'CNPJ',
+    dueDate: 'Data de Vencimento', 
+    name: 'Nome da Empresa'
   };
 
   const friendlyField = fieldMap[field] || field;
@@ -157,8 +232,8 @@ const formatLogDescription = (description: string) => {
 };
 
 const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose, onNotify }) => {
-  const { currentUser, isAdmin } = useAuth();
-  const { updateTask, collaborators, tasks } = useTasks();
+  const { currentUser, isAdmin, isEffectiveAdmin } = useAuth();
+  const { updateTask, collaborators, tasks, activeYear } = useTasks();
   
   // Use a versão mais recente da tarefa do contexto, se disponível
   const task = tasks.find(t => t.id === propTask.id) || propTask;
@@ -176,6 +251,9 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
   // History State
   const [historyLogs, setHistoryLogs] = useState<LogEntry[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [historyPage, setHistoryPage] = useState(0);
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  const [isLoadingMoreHistory, setIsLoadingMoreHistory] = useState(false);
 
   // Comments State
   const [comments, setComments] = useState<TaskComment[]>([]);
@@ -184,12 +262,21 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
   const [isSendingComment, setIsSendingComment] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
+  const [commentsPage, setCommentsPage] = useState(0);
+  const [hasMoreComments, setHasMoreComments] = useState(false);
+  const [isLoadingMoreComments, setIsLoadingMoreComments] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<TaskComment | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null); // commentId or 'new'
+  const [emojiPickerPos, setEmojiPickerPos] = useState({ top: 0, left: 0 });
   
   // UI Helpers
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const [deleteConfirmMode, setDeleteConfirmMode] = useState(false);
   const commentsEndRef = useRef<HTMLDivElement>(null);
+  
+  // Attachment Preview State
+  const [pendingAttachment, setPendingAttachment] = useState<{ file: File, preview: string } | null>(null);
   const descriptionRef = useRef(description);
   
   // File Input Refs
@@ -207,6 +294,149 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
   const descInputRef = useRef<HTMLTextAreaElement>(null);
 
   const effectivePriority = getEffectivePriority(task);
+
+  // --- HELPERS FOR COMMENTS ---
+  const organizedComments = useMemo(() => {
+      const map = new Map<string, TaskComment[]>();
+      const roots: TaskComment[] = [];
+      
+      // Create a set of IDs for O(1) lookup
+      const commentIds = new Set(comments.map(c => c.id));
+
+      comments.forEach(c => {
+          const parentExists = c.parentId && commentIds.has(c.parentId);
+          if (c.parentId && parentExists) {
+              if (!map.has(c.parentId)) map.set(c.parentId, []);
+              map.get(c.parentId)!.push(c);
+          } else {
+              roots.push(c);
+          }
+      });
+      
+      return { roots, map };
+  }, [comments]);
+
+  const handleReaction = async (commentId: string, emoji: string) => {
+      if (!currentUser) return;
+      try {
+          if (USE_SUPABASE && supabase) {
+              await toggleCommentReactionSupabase(commentId, emoji, currentUser.name);
+              await loadComments(true);
+          }
+      } catch (e) {
+          console.error("Error toggling reaction:", e);
+      }
+  };
+
+  const renderComment = (msg: TaskComment, isReply = false) => {
+    const isMe = currentUser && msg.author === currentUser.name;
+    const isEditing = editingCommentId === msg.id;
+    const hasEdited = msg.text.endsWith('(editado)');
+    const replies = organizedComments.map.get(msg.id) || [];
+    
+    // Find parent for "Replying to" label
+    const parentComment = msg.parentId ? comments.find(c => c.id === msg.parentId) : null;
+    
+    return (
+        <div key={msg.id} className={`flex flex-col w-full ${isReply ? 'mt-2' : 'mt-4'} animate-enter`}>
+            {/* Reply Context Line */}
+            {parentComment && (
+                <div className={`flex items-center gap-1 mb-1 text-[10px] text-gray-400 ${isMe ? 'justify-end pr-2' : 'justify-start pl-12'}`}>
+                    <CornerDownRight size={10} className="opacity-50" />
+                    <span>Em resposta a <strong>{parentComment.author}</strong></span>
+                </div>
+            )}
+
+            <div className={`flex gap-3 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                {/* Avatar */}
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-200 dark:bg-zinc-700 flex items-center justify-center text-[10px] font-bold text-gray-600 dark:text-gray-300 shadow-sm mt-auto mb-1 border border-white dark:border-zinc-800">
+                    {getInitials(msg.author)}
+                </div>
+                
+                <div className={`flex flex-col max-w-[85%] ${isMe ? 'items-end' : 'items-start'} group relative min-w-[200px]`}>
+                    
+                    {/* Header (Name & Time) */}
+                    <div className={`flex items-center gap-2 mb-1 px-1 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                        <span className="text-[11px] font-bold text-gray-900 dark:text-white">{msg.author}</span>
+                        <span className="text-[9px] text-gray-400">{msg.timestamp}</span>
+                    </div>
+
+                    {isEditing ? (
+                        <div className="flex flex-col gap-2 w-full bg-white dark:bg-zinc-800 p-2 rounded-xl border border-lm-yellow shadow-lg z-10">
+                            <textarea value={editingText} onChange={(e) => setEditingText(e.target.value)} className="w-full p-2 text-sm bg-transparent outline-none resize-none text-gray-900 dark:text-white" rows={3} autoFocus />
+                            <div className="flex gap-2 justify-end">
+                                <button onClick={() => setEditingCommentId(null)} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1">Cancelar</button>
+                                <button onClick={() => saveEditComment(msg)} className="text-xs bg-lm-yellow text-gray-900 px-3 py-1 rounded-md font-bold">Salvar</button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className={`relative px-4 py-2.5 text-sm shadow-sm transition-all hover:shadow-md ${
+                            isMe 
+                            ? 'bg-lm-yellow text-gray-900 rounded-2xl rounded-tr-none' 
+                            : 'bg-white dark:bg-zinc-800 text-gray-800 dark:text-gray-200 border border-gray-100 dark:border-zinc-700 rounded-2xl rounded-tl-none'
+                        }`}>
+                            <RichTextRenderer text={msg.text.replace(' (editado)', '')} />
+                            {hasEdited && <span className="text-[9px] opacity-60 ml-1 italic block text-right mt-1">(editado)</span>}
+                        </div>
+                    )}
+                    
+                    {/* Reactions & Actions Bar */}
+                    <div className={`flex items-center gap-2 mt-1 px-1 ${isMe ? 'justify-end' : 'justify-start'} flex-wrap min-h-[20px]`}>
+                         {/* Existing Reactions */}
+                        {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                            <div className="flex gap-1">
+                                {Object.entries(msg.reactions).map(([emoji, users]) => {
+                                    if (!users || !Array.isArray(users)) return null;
+                                    const iReacted = users.includes(currentUser?.name || '');
+                                    return (
+                                        <button 
+                                            key={emoji}
+                                            onClick={() => handleReaction(msg.id, emoji)}
+                                            className={`text-[10px] px-1.5 py-0.5 rounded-full border flex items-center gap-1 transition-all ${iReacted ? 'bg-blue-50 border-blue-200 text-blue-600 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-300' : 'bg-gray-50 border-gray-200 text-gray-500 dark:bg-zinc-800 dark:border-zinc-700 dark:text-gray-400'}`}
+                                            title={users.join(', ')}
+                                        >
+                                            {emoji} {users.length}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                        
+                        {/* Action Buttons (Hover) */}
+                        {!isEditing && (
+                            <div className={`flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-white/80 dark:bg-black/50 backdrop-blur-sm rounded-full px-1 py-0.5 shadow-sm border border-gray-100 dark:border-zinc-800 ${isMe ? '-mr-2' : '-ml-2'}`}>
+                                <button onClick={() => handleReaction(msg.id, '👍')} className="p-1 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-full text-gray-400 hover:text-blue-500 transition-colors" title="Curtir">👍</button>
+                                <button 
+                                    onClick={(e) => {
+                                        const rect = e.currentTarget.getBoundingClientRect();
+                                        setEmojiPickerPos({ top: rect.top - 400, left: rect.left - 150 });
+                                        setShowEmojiPicker(msg.id);
+                                    }} 
+                                    className="p-1 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-full text-gray-400 hover:text-yellow-500 transition-colors" 
+                                    title="Reagir"
+                                >
+                                    <Smile size={12} />
+                                </button>
+                                <button onClick={() => { setReplyingTo(msg); commentInputRef.current?.focus(); }} className="p-1 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-full text-gray-400 hover:text-green-500 transition-colors" title="Responder"><CornerDownRight size={12} /></button>
+                                {(isMe || isEffectiveAdmin) && (
+                                    <button onClick={(e) => { e.stopPropagation(); const rect = e.currentTarget.getBoundingClientRect(); setMenuPos({ top: rect.bottom + 4, left: rect.right }); setActiveMenuId(activeMenuId === msg.id ? null : msg.id); setDeleteConfirmMode(false); }} className="p-1 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-full text-gray-400 hover:text-red-500 transition-colors"><MoreVertical size={12} /></button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+            
+            {/* Nested Replies */}
+            {replies.length > 0 && (
+                <div className="flex flex-col gap-2 mt-2 pl-10 relative">
+                     <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-100 dark:bg-zinc-800"></div>
+                     {replies.map(reply => renderComment(reply, true))}
+                </div>
+            )}
+        </div>
+    );
+  };
 
   // --- MENTION LOGIC ---
   const filteredCollaborators = useMemo(() => {
@@ -272,24 +502,58 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, target: 'comment' | 'description') => {
       if (e.target.files && e.target.files[0]) {
           const file = e.target.files[0];
+          const isImage = file.type.startsWith('image/');
+          
           try {
-              onNotify('Processando...', 'Comprimindo imagem para envio...');
-              const base64 = await compressImage(file);
-              
-              if (base64.length > 50000) {
-                  onNotify('Erro', 'A imagem é muito grande. Tente uma menor ou reduza a qualidade.');
+              if (target === 'comment') {
+                  if (file.size > 5 * 1024 * 1024) {
+                       onNotify('Erro', 'Arquivo muito grande (máx 5MB).');
+                       return;
+                  }
+                  
+                  const reader = new FileReader();
+                  reader.onload = (ev) => {
+                      setPendingAttachment({
+                          file,
+                          preview: ev.target?.result as string
+                      });
+                  };
+                  reader.readAsDataURL(file);
+                  
+                  // Reset input
+                  e.target.value = '';
                   return;
               }
 
-              const markdownImg = `![Imagem](${base64})`;
+              onNotify('Processando...', isImage ? 'Comprimindo imagem...' : 'Preparando anexo...');
               
-              if (target === 'comment') {
-                  setNewComment(prev => prev + (prev ? '\n' : '') + markdownImg);
+              let attachmentMarkdown = '';
+              
+              if (isImage) {
+                  const base64 = await compressImage(file);
+                  if (base64.length > 50000) {
+                      onNotify('Erro', 'A imagem é muito grande. Tente uma menor.');
+                      return;
+                  }
+                  attachmentMarkdown = `![${file.name}](${base64})`;
               } else {
-                  setDescription(prev => prev + (prev ? '\n' : '') + markdownImg);
+                  // Generic file handling (Base64)
+                  if (file.size > 50 * 1024) { // 50KB limit for Sheets/Supabase cell safety
+                      onNotify('Erro', 'Arquivo muito grande (máx 50KB para anexos diretos).');
+                      return;
+                  }
+                  
+                  const reader = new FileReader();
+                  const base64 = await new Promise<string>((resolve) => {
+                      reader.onload = () => resolve(reader.result as string);
+                      reader.readAsDataURL(file);
+                  });
+                  attachmentMarkdown = `[${file.name}](${base64})`;
               }
+              
+              setDescription(prev => prev + (prev ? '\n' : '') + attachmentMarkdown);
           } catch (error) {
-              onNotify('Erro', 'Falha ao processar imagem. Tente uma menor.');
+              onNotify('Erro', 'Falha ao processar arquivo.');
           }
       }
       // Reset input
@@ -303,6 +567,18 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
               e.preventDefault();
               const file = items[i].getAsFile();
               if (file) {
+                  if (target === 'comment') {
+                      const reader = new FileReader();
+                      reader.onload = (ev) => {
+                          setPendingAttachment({
+                              file,
+                              preview: ev.target?.result as string
+                          });
+                      };
+                      reader.readAsDataURL(file);
+                      return;
+                  }
+
                   try {
                       onNotify('Processando...', 'Comprimindo imagem colada...');
                       const base64 = await compressImage(file);
@@ -313,12 +589,7 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
                       }
 
                       const markdownImg = `![Print](${base64})`;
-                      
-                      if (target === 'comment') {
-                          setNewComment(prev => prev + (prev ? '\n' : '') + markdownImg);
-                      } else {
-                          setDescription(prev => prev + (prev ? '\n' : '') + markdownImg);
-                      }
+                      setDescription(prev => prev + (prev ? '\n' : '') + markdownImg);
                   } catch (error) {
                       onNotify('Erro', 'Falha ao colar imagem.');
                   }
@@ -347,6 +618,7 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
       if (isOpen) {
           if (activeTab === 'history') loadHistory();
           if (activeTab === 'comments') loadComments();
+          if (activeTab === 'details') loadDetails();
       }
   }, [activeTab, isOpen, task.id]);
   
@@ -367,19 +639,60 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
   useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
           const target = event.target as Element;
-          if (target.closest('.comment-menu-dropdown') || target.closest('.comment-menu-trigger')) return;
+          if (target.closest('.comment-menu-dropdown') || target.closest('.comment-menu-trigger') || target.closest('.emoji-picker-container')) return;
           setActiveMenuId(null);
+          setShowEmojiPicker(null);
       };
-      if (activeMenuId) document.addEventListener('mousedown', handleClickOutside);
+      if (activeMenuId || showEmojiPicker) document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [activeMenuId]);
+  }, [activeMenuId, showEmojiPicker]);
 
+
+  // --- SUPABASE REALTIME ---
+  useEffect(() => {
+      if (!isOpen || !USE_SUPABASE || !supabase) return;
+
+      const channel = supabase
+          .channel(`task-${task.id}`)
+          .on(
+              'postgres_changes',
+              { event: '*', schema: 'public', table: 'detalhes', filter: `id=eq.${task.id}` },
+              () => {
+                  loadDetails();
+              }
+          )
+          .on(
+              'postgres_changes',
+              { event: '*', schema: 'public', table: 'comentarios', filter: `empresa_id=eq.${task.id}` },
+              () => {
+                  if (activeTab === 'comments') loadComments(true);
+              }
+          )
+          .on(
+              'postgres_changes',
+              { event: '*', schema: 'public', table: 'registros', filter: `empresa_id=eq.${task.id}` },
+              () => {
+                  if (activeTab === 'history') loadHistory();
+              }
+          )
+          .subscribe();
+
+      return () => {
+          supabase.removeChannel(channel);
+      };
+  }, [task.id, isOpen, activeTab]);
 
   // --- DATA LOADING ---
 
   const loadDetails = async () => {
     setIsLoadingDetails(true);
-    const details = await fetchTaskDetail(task.id);
+    let details;
+    if (USE_SUPABASE && supabase) {
+        details = await fetchTaskDetailSupabase(task.id, activeYear);
+    } else {
+        details = await fetchTaskDetail(task.id);
+    }
+    
     if (details) {
         setDescription(details.description);
         setChecklist(details.checklist);
@@ -393,25 +706,91 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
 
   const loadHistory = async () => {
       setIsLoadingHistory(true);
-      const allLogs = await fetchLogs();
-      const filteredLogs = allLogs
-          .filter(row => row[3] === task.id)
-          .map(row => ({
+      
+      if (USE_SUPABASE && supabase) {
+          const { logs: data, hasMore } = await fetchLogsPaginatedSupabase(task.id, 0, 20, activeYear);
+          const formattedLogs = data.map(row => ({
               timestamp: row[0],
               description: row[1],
               user: row[2]
-          }))
-          .reverse();
-
-      setHistoryLogs(filteredLogs);
+          }));
+          setHistoryLogs(formattedLogs);
+          setHasMoreHistory(hasMore);
+          setHistoryPage(0);
+      } else {
+          const allLogs = await fetchLogs();
+          const filteredLogs = allLogs
+              .filter(row => row[3] === task.id)
+              .map(row => ({
+                  timestamp: row[0],
+                  description: row[1],
+                  user: row[2]
+              }))
+              .reverse();
+          setHistoryLogs(filteredLogs);
+          setHasMoreHistory(false);
+      }
+      
       setIsLoadingHistory(false);
+  }
+
+  const loadMoreHistory = async () => {
+      if (!hasMoreHistory || isLoadingMoreHistory) return;
+      setIsLoadingMoreHistory(true);
+      
+      try {
+          const nextPage = historyPage + 1;
+          const { logs: olderLogs, hasMore } = await fetchLogsPaginatedSupabase(task.id, nextPage, 20, activeYear);
+          
+          const formattedLogs = olderLogs.map(row => ({
+              timestamp: row[0],
+              description: row[1],
+              user: row[2]
+          }));
+
+          setHistoryLogs(prev => [...prev, ...formattedLogs]);
+          setHistoryPage(nextPage);
+          setHasMoreHistory(hasMore);
+      } catch (error) {
+          console.error("Error loading more history:", error);
+      } finally {
+          setIsLoadingMoreHistory(false);
+      }
   }
 
   const loadComments = async (silent = false) => {
       if (!silent) setIsLoadingComments(true);
-      const data = await fetchComments(task.id);
-      setComments(data);
+      
+      if (USE_SUPABASE && supabase) {
+          const { comments: data, hasMore } = await fetchCommentsPaginatedSupabase(task.id, 0, 20, activeYear);
+          setComments(data);
+          setHasMoreComments(hasMore);
+          setCommentsPage(0);
+      } else {
+          const data = await fetchComments(task.id);
+          setComments(data);
+          setHasMoreComments(false);
+      }
+      
       if (!silent) setIsLoadingComments(false);
+  }
+
+  const loadMoreComments = async () => {
+      if (!hasMoreComments || isLoadingMoreComments) return;
+      setIsLoadingMoreComments(true);
+      
+      try {
+          const nextPage = commentsPage + 1;
+          const { comments: olderComments, hasMore } = await fetchCommentsPaginatedSupabase(task.id, nextPage, 20, activeYear);
+          
+          setComments(prev => [...olderComments, ...prev]);
+          setCommentsPage(nextPage);
+          setHasMoreComments(hasMore);
+      } catch (error) {
+          console.error("Error loading more comments:", error);
+      } finally {
+          setIsLoadingMoreComments(false);
+      }
   }
 
   const checkAndSendMentions = async (text: string, context: 'comment' | 'description') => {
@@ -424,8 +803,8 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
 
       if (mentionedCollaborators.length > 0) {
           const timestamp = new Date().toLocaleString('pt-BR');
-          const promises = mentionedCollaborators.map(recipient => 
-              sendNotification({
+          const promises = mentionedCollaborators.map(recipient => {
+              const notif = {
                   id: Date.now().toString() + Math.random().toString().slice(2, 5),
                   recipient: recipient.name,
                   sender: currentUser.name,
@@ -435,8 +814,14 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
                       : `Mencionou você na descrição de: ${task.name}`,
                   isRead: false,
                   timestamp: timestamp
-              })
-          );
+              };
+              
+              if (USE_SUPABASE && supabase) {
+                  return sendNotificationSupabase(notif);
+              } else {
+                  return sendNotification(notif);
+              }
+          });
           await Promise.all(promises);
       }
   };
@@ -450,7 +835,12 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
           description: descToSave,
           checklist: newChecklist !== undefined ? newChecklist : checklist
       };
-      await saveTaskDetail(detail);
+      
+      if (USE_SUPABASE && supabase) {
+          await saveTaskDetailSupabase(detail, activeYear);
+      } else {
+          await saveTaskDetail(detail);
+      }
 
       if (newDesc !== undefined && newDesc !== descriptionRef.current) {
           await checkAndSendMentions(newDesc, 'description');
@@ -465,9 +855,14 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
 
       setIsSendingComment(true);
       try {
-          await saveComment(task.id, currentUser.name, newComment);
+          if (USE_SUPABASE && supabase) {
+              await saveCommentSupabase(task.id, currentUser.name, newComment, replyingTo?.id, activeYear);
+          } else {
+              await saveComment(task.id, currentUser.name, newComment);
+          }
           await checkAndSendMentions(newComment, 'comment');
           setNewComment('');
+          setReplyingTo(null);
           await loadComments(true); 
       } catch (error) {
           onNotify('Erro', 'Não foi possível enviar o comentário');
@@ -477,9 +872,12 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
 
   const handleDeleteComment = async (comment: TaskComment) => {
       setActiveMenuId(null);
-      if (!comment.rowIndex) return;
       try {
-          await deleteComment(comment.rowIndex);
+          if (USE_SUPABASE && supabase) {
+              await deleteCommentSupabase(comment.id);
+          } else if (comment.rowIndex) {
+              await deleteComment(comment.rowIndex);
+          }
           await loadComments(true); 
           onNotify('Sucesso', 'Comentário removido.');
       } catch (e) {
@@ -495,10 +893,14 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
   };
 
   const saveEditComment = async (comment: TaskComment) => {
-      if (!comment.rowIndex || !editingText.trim()) return;
+      if (!editingText.trim()) return;
       try {
           const finalText = editingText.trim() + ' (editado)';
-          await updateComment(comment.rowIndex, finalText);
+          if (USE_SUPABASE && supabase) {
+              await updateCommentSupabase(comment.id, finalText);
+          } else if (comment.rowIndex) {
+              await updateComment(comment.rowIndex, finalText);
+          }
           await checkAndSendMentions(finalText, 'comment');
           await loadComments(true);
           setEditingCommentId(null);
@@ -507,6 +909,37 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
           onNotify('Erro', 'Falha ao atualizar comentário.');
       }
   };
+
+  // Logic for Due Date (Copied from KanbanCard)
+  const getDueDateStatus = () => {
+      if (!task.dueDate) return null;
+      const date = parseBrDate(task.dueDate);
+      if (!date) return null;
+      
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      
+      const diffTime = date.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      const isDone = isFiscalFinished(task.statusFiscal);
+
+      // Se finalizada, verde
+      if (isDone) return { color: 'text-green-600 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800', icon: Calendar, text: task.dueDate };
+
+      // Se atrasada, vermelha
+      if (diffDays < 0) return { color: 'text-red-600 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 font-bold', icon: AlertTriangle, text: task.dueDate };
+      
+      // Se próximo (3 dias), amarelo
+      if (diffDays <= 3) return { color: 'text-orange-600 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 font-bold', icon: Calendar, text: task.dueDate };
+      
+      // Normal
+      return { color: 'text-gray-500 bg-gray-50 dark:bg-zinc-800 border-gray-200 dark:border-zinc-700', icon: Calendar, text: task.dueDate };
+  };
+
+  const dueStatus = getDueDateStatus();
+  const dateStyle = dueStatus ? dueStatus.color : 'text-gray-500 bg-gray-50 dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 hover:bg-gray-100 dark:hover:bg-zinc-700';
+  const DateIcon = dueStatus ? dueStatus.icon : Calendar;
 
   const handleDueDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const isoDate = e.target.value;
@@ -565,7 +998,7 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
   return (
     <>
       <div 
-        className="fixed inset-0 bg-transparent backdrop-blur-[2px] z-40 transition-all duration-300"
+        className="fixed inset-0 bg-black/20 backdrop-blur-md z-40 transition-all duration-300"
         onClick={onClose}
       ></div>
 
@@ -589,6 +1022,7 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
                                         ? 'bg-orange-50 text-orange-600 border-orange-100 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-900/50'
                                         : 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-zinc-800 dark:text-gray-400 dark:border-zinc-700'
                                 }`}
+                                disabled={!isEffectiveAdmin}
                             >
                                 <option value="">Auto</option>
                                 <option value="BAIXA">Baixa</option>
@@ -598,13 +1032,17 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
                             <ChevronDown size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                         </div>
                         
-                        <div className="flex items-center gap-1 bg-gray-50 dark:bg-zinc-800 rounded-md px-2 py-0.5 border border-gray-200 dark:border-zinc-700 hover:border-gray-400 transition-colors">
-                            <Calendar size={12} className="text-gray-500" />
+                        <div className={`relative group/date flex items-center gap-1.5 px-2 py-0.5 rounded-md border transition-all cursor-pointer hover:ring-2 hover:ring-lm-yellow/50 ${dateStyle}`}>
+                            <DateIcon size={12} className="pointer-events-none" />
+                            <span className="text-[10px] font-bold uppercase pointer-events-none min-w-[40px] text-center text-inherit">
+                                {task.dueDate || 'DATA'}
+                            </span>
                             <input 
                                 type="date" 
                                 value={toIsoDate(task.dueDate)}
                                 onChange={handleDueDateChange}
-                                className="bg-transparent text-[10px] font-bold text-gray-700 dark:text-gray-300 outline-none uppercase"
+                                onKeyDown={(e) => e.preventDefault()}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 date-input-full"
                             />
                         </div>
                     </div>
@@ -651,45 +1089,61 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
             {activeTab === 'comments' && (
                 <div className="flex flex-col h-full animate-enter">
                     <div className="flex-1 overflow-y-auto pr-2 space-y-4 min-h-0 flex flex-col" onScroll={() => setActiveMenuId(null)}>
+                        {hasMoreComments && (
+                            <div className="flex justify-center py-2">
+                                <button 
+                                    onClick={loadMoreComments} 
+                                    disabled={isLoadingMoreComments}
+                                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50 flex items-center gap-1"
+                                >
+                                    {isLoadingMoreComments ? <Loader2 size={12} className="animate-spin" /> : <History size={12} />}
+                                    Carregar anteriores
+                                </button>
+                            </div>
+                        )}
+
                         {isLoadingComments ? (
                             <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-400 py-10"><Loader2 size={32} className="animate-spin" /><span className="text-sm">Carregando comentários...</span></div>
                         ) : comments.length === 0 ? (
                              <div className="flex flex-col items-center justify-center h-full gap-2 text-gray-400 py-10"><MessageSquare size={32} className="opacity-20" /><span className="text-sm">Nenhum comentário ainda. Use @Nome para notificar.</span></div>
                         ) : (
-                            comments.map((msg) => {
-                                const isMe = currentUser && msg.author === currentUser.name;
-                                const isEditing = editingCommentId === msg.id;
-                                const hasEdited = msg.text.endsWith('(editado)');
-                                return (
-                                    <div key={msg.id} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-200 dark:bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-gray-600 dark:text-gray-300 self-end mb-5">{getInitials(msg.author)}</div>
-                                        <div className={`flex flex-col max-w-[85%] ${isMe ? 'items-end' : 'items-start'} group relative`}>
-                                            {isEditing ? (
-                                                <div className="flex flex-col gap-2 w-full min-w-[200px]">
-                                                    <textarea value={editingText} onChange={(e) => setEditingText(e.target.value)} className="w-full p-2 text-sm border rounded-lg bg-white dark:bg-zinc-800 dark:text-white border-gray-300 dark:border-zinc-700 outline-none focus:ring-2 focus:ring-lm-yellow" rows={2} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEditComment(msg); } }} />
-                                                    <div className="flex gap-2 justify-end"><button onClick={() => setEditingCommentId(null)} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1">Cancelar</button><button onClick={() => saveEditComment(msg)} className="text-xs bg-lm-yellow text-gray-900 px-3 py-1 rounded-md font-bold">Salvar</button></div>
-                                                </div>
-                                            ) : (
-                                                <div className={`relative px-4 py-2.5 rounded-2xl text-sm shadow-sm ${isMe ? 'bg-lm-yellow text-gray-900 rounded-br-none' : 'bg-white dark:bg-zinc-800 text-gray-800 dark:text-gray-200 border border-gray-100 dark:border-zinc-700 rounded-bl-none'}`}>
-                                                    <RichTextRenderer text={msg.text.replace(' (editado)', '')} />
-                                                    {hasEdited && <span className="text-[9px] opacity-60 ml-2 italic">(editado)</span>}
-                                                </div>
-                                            )}
-                                            <div className="flex items-center gap-2 mt-1 px-1 mb-2"><span className="text-[10px] text-gray-400 flex items-center gap-1"><span className="font-bold">{msg.author}</span><span>•</span><span>{msg.timestamp}</span></span>
-                                                {!isEditing && isMe && (
-                                                    <button onClick={(e) => { e.stopPropagation(); const rect = e.currentTarget.getBoundingClientRect(); setMenuPos({ top: rect.bottom + 4, left: rect.right }); setActiveMenuId(activeMenuId === msg.id ? null : msg.id); setDeleteConfirmMode(false); }} className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-gray-600 p-0.5 comment-menu-trigger"><MoreVertical size={12} /></button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )
-                            })
+                            organizedComments.roots.map(msg => renderComment(msg))
                         )}
                         <div ref={commentsEndRef} />
                     </div>
 
                     <form onSubmit={handleSendComment} className="mt-4 pt-4 border-t border-gray-100 dark:border-zinc-800 relative flex-shrink-0 bg-[#FAFAFA] dark:bg-[#09090b]">
                         <div className="relative">
+                            {replyingTo && (
+                                <div className="flex items-center justify-between bg-gray-100 dark:bg-zinc-800 p-2 rounded-t-lg border-b border-gray-200 dark:border-zinc-700 text-xs text-gray-600 dark:text-gray-300 mb-1">
+                                    <span className="truncate">Respondendo a <b>{replyingTo.author}</b>: {replyingTo.text.substring(0, 50)}...</span>
+                                    <button type="button" onClick={() => setReplyingTo(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={14} /></button>
+                                </div>
+                            )}
+                            
+                            {pendingAttachment && (
+                                <div className="flex items-center gap-3 p-2 mb-2 bg-gray-50 dark:bg-zinc-800 rounded-lg border border-gray-200 dark:border-zinc-700 animate-in fade-in slide-in-from-bottom-2">
+                                    <div className="relative group">
+                                        <img 
+                                            src={pendingAttachment.preview} 
+                                            alt="Preview" 
+                                            className="w-16 h-16 object-cover rounded-md border border-gray-200 dark:border-zinc-600" 
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setPendingAttachment(null)}
+                                            className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 shadow-sm hover:bg-red-600 transition-colors"
+                                        >
+                                            <X size={10} />
+                                        </button>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-medium text-gray-700 dark:text-gray-200 truncate">{pendingAttachment.file.name}</p>
+                                        <p className="text-[10px] text-gray-500 dark:text-gray-400">{(pendingAttachment.file.size / 1024).toFixed(1)} KB</p>
+                                    </div>
+                                </div>
+                            )}
+
                             {isMentionOpen && mentionTarget === 'comment' && filteredCollaborators.length > 0 && (
                                 <div className="absolute left-0 bottom-full mb-2 w-64 bg-white dark:bg-zinc-800 rounded-xl shadow-2xl border border-gray-200 dark:border-zinc-700 z-50 animate-pop-in overflow-hidden">
                                     <div className="px-3 py-2 border-b border-gray-100 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-900/50 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
@@ -746,7 +1200,7 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
 
                             <button 
                                 type="submit"
-                                disabled={!newComment.trim() || isSendingComment}
+                                disabled={(!newComment.trim() && !pendingAttachment) || isSendingComment}
                                 className="absolute right-2 bottom-2.5 p-1.5 text-lm-dark dark:text-lm-yellow hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                             >
                                 {isSendingComment ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
@@ -754,6 +1208,29 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
                         </div>
                     </form>
                 </div>
+            )}
+
+            {/* Emoji Picker Portal */}
+            {showEmojiPicker && createPortal(
+                <div 
+                    className="fixed z-[100] emoji-picker-container shadow-2xl rounded-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+                    style={{ 
+                        top: Math.max(10, Math.min(window.innerHeight - 450, emojiPickerPos.top)), 
+                        left: Math.max(10, Math.min(window.innerWidth - 350, emojiPickerPos.left)) 
+                    }}
+                >
+                    <EmojiPicker 
+                        onEmojiClick={(emojiData: EmojiClickData) => {
+                            handleReaction(showEmojiPicker, emojiData.emoji);
+                            setShowEmojiPicker(null);
+                        }}
+                        theme={document.documentElement.classList.contains('dark') ? EmojiTheme.DARK : EmojiTheme.LIGHT}
+                        lazyLoadEmojis={true}
+                        skinTonesDisabled={true}
+                        searchPlaceholder="Buscar emoji..."
+                    />
+                </div>,
+                document.body
             )}
 
             {/* --- TAB: DETAILS --- */}
@@ -892,6 +1369,19 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
                                             </div>
                                         </div>
                                     ))}
+                                    
+                                    {hasMoreHistory && (
+                                        <div className="flex justify-center pt-4 ml-6">
+                                            <button 
+                                                onClick={loadMoreHistory} 
+                                                disabled={isLoadingMoreHistory}
+                                                className="px-4 py-2 bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-gray-300 text-xs font-medium rounded-lg hover:bg-gray-200 dark:hover:bg-zinc-700 disabled:opacity-50 flex items-center gap-2 transition-colors"
+                                            >
+                                                {isLoadingMoreHistory ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                                                Carregar mais histórico
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>

@@ -70,6 +70,11 @@ export const useTaskFilters = ({ tasks, currentDept, activeView, activeSubView, 
             return t.id.toLowerCase() === exactId.toLowerCase();
         }
 
+        // Filter out inactive companies in Kanban view and My Obligations view
+        if ((activeView === 'kanban' || activeView === 'my_obligations') && t.active === false) {
+            return false;
+        }
+
         const matchesSearch = t.name.toLowerCase().includes(query) || t.id.includes(query) || (t.cnpj && t.cnpj.includes(query));
         const currentRegime = t.regime || 'NENHUM INFORMADO';
         const matchesRegime = filterRegime ? currentRegime === filterRegime : true;

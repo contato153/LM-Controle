@@ -10,11 +10,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.97.0",
+    "@tanstack/react-query": "^5.90.21",
+    "emoji-picker-react": "^4.18.0",
+    "framer-motion": "^12.34.3",
+    "jspdf": "latest",
+    "jspdf-autotable": "latest",
+    "lucide-react": "^0.556.0",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
-    "lucide-react": "^0.556.0",
-    "jspdf": "latest",
-    "jspdf-autotable": "latest"
+    "react-intersection-observer": "^10.0.3",
+    "recharts": "^3.7.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

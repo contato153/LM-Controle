@@ -5,12 +5,16 @@ import Sidebar from './components/Sidebar';
 import KanbanColumn from './components/KanbanColumn'; 
 import OverviewTable from './components/OverviewTable';
 import Login from './components/Login';
+import MyDay from './components/MyDay';
 import ReportsDashboard from './components/ReportsDashboard';
 import TeamView from './components/TeamView';
+import CompaniesView from './components/CompaniesView';
 import SettingsView from './components/SettingsView';
+import AuditLogView from './components/AuditLogView';
 import TaskDrawer from './components/TaskDrawer';
 import { CompanyTask, COLUMNS_FISCAL, COLUMNS_CONTABIL, COLUMNS_BALANCO, COLUMNS_ECD, COLUMNS_LUCRO_REINF, COLUMNS_REINF, Department } from './types';
-import { Search, RefreshCw, X, ChevronDown, Calculator, Receipt, Filter, ArrowUpDown, FileBarChart, Scale, CheckCircle2, Bell } from 'lucide-react';
+import { Search, RefreshCw, X, ChevronDown, Calculator, Receipt, Filter, ArrowUpDown, FileBarChart, Scale, CheckCircle2, FolderOpen, LayoutDashboard } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from './contexts/AuthContext';
 import { useTasks } from './contexts/TasksContext';
 import { useToast } from './contexts/ToastContext';
@@ -91,16 +95,15 @@ const SkeletonLoader = () => (
 
 const App: React.FC = () => {
   const { currentUser } = useAuth();
-  const { tasks, isLoading, refreshData, settings, collaborators, notifications, markNotificationRead, unreadCount } = useTasks();
+  const { tasks, isLoading, refreshData, settings, collaborators, setActiveYear } = useTasks();
   const { addNotification } = useToast();
 
-  const [activeView, setActiveView] = useState('kanban'); 
+  const [activeView, setActiveView] = useState('my_day'); 
   const [currentDept, setCurrentDept] = useState<Department>(Department.FISCAL);
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 1024);
   const [activeSubView, setActiveSubView] = useState<'LUCRO' | 'REINF' | 'BALANCETE' | 'BALANCO'>('BALANCETE');
   const [selectedTask, setSelectedTask] = useState<CompanyTask | null>(null);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const notifRef = useRef<HTMLDivElement>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   const {
       filteredTasks,
@@ -114,24 +117,28 @@ const App: React.FC = () => {
   } = useTaskFilters({ tasks, currentDept, activeView, activeSubView, currentUser, collaborators });
 
   useEffect(() => {
-      if (currentUser && settings.defaultDepartment) {
-          setCurrentDept(settings.defaultDepartment);
+      if (currentUser && !isInitialized) {
+          if (settings.defaultDepartment) {
+              setCurrentDept(settings.defaultDepartment);
+          }
+          if (settings.defaultYear) {
+              setActiveYear(settings.defaultYear);
+          }
+          if (settings.defaultTab) {
+              const tabMap: Record<string, string> = {
+                  'dashboard': 'my_day',
+                  'kanban': 'kanban',
+                  'list': 'kanban',
+                  'reports': 'reports'
+              };
+              const view = tabMap[settings.defaultTab] || settings.defaultTab;
+              setActiveView(view as any);
+          }
+          setIsInitialized(true);
       }
-  }, [currentUser, settings.defaultDepartment]);
+  }, [currentUser, settings, setActiveYear, isInitialized]);
 
-  useEffect(() => { 
-      clearFilters();
-  }, [activeView]);
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-        if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
-            setShowNotifications(false);
-        }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  /* Removed useEffect that cleared filters on activeView change to prevent race conditions with navigation */
 
   if (!currentUser) return <Login />;
   
@@ -169,79 +176,27 @@ const App: React.FC = () => {
           setFilterResponsible(''); 
           setFilterStatus(''); 
       }
-      // Se não estiver em Minhas Tarefas, vai para Kanban global.
-      // Se estiver em Minhas Tarefas, PERMANECE lá (mas muda o departamento acima).
-      if (activeView !== 'my_obligations') setActiveView('kanban');
+      // Se um taskId for fornecido, forçamos a ida para a visão geral (kanban) para garantir que a tarefa seja visível
+      // mesmo que o usuário esteja na aba "Minhas Tarefas" e a tarefa não seja dele.
+      if (taskId || activeView !== 'my_obligations') setActiveView('kanban');
   };
 
   const renderKanbanView = () => (
-    <div className="h-full flex flex-col animate-enter">
+    <div className="h-full flex flex-col">
       <div className={`flex-shrink-0 z-30 sticky top-0 bg-gray-50/95 dark:bg-black/95 backdrop-blur-md border-b border-gray-200 dark:border-zinc-900 transition-colors ${settings.reduceMotion ? '' : 'duration-300'}`}>
-          <div className="px-8 pt-6 pb-2">
-            <div className="flex items-start justify-between mb-6">
+          <div className="px-8 pt-10 pb-2 max-w-7xl mx-auto w-full">
+            <div className="flex justify-between items-center mb-6">
                 <div>
-                    <h2 className="text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight transition-colors">
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+                        {activeView === 'my_obligations' ? <FolderOpen className="text-lm-yellow" size={28} /> : <LayoutDashboard className="text-lm-yellow" size={28} />}
                         {activeView === 'my_obligations' ? `Minhas Tarefas: ${currentDept === Department.TODOS ? 'Visão Geral' : currentDept}` : currentDept}
                     </h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-1 transition-colors">
+                    <p className="text-gray-500 dark:text-gray-400 mt-1 ml-11">
                         {filteredTasks.length} {filteredTasks.length === 1 ? 'obrigação listada' : 'obrigações listadas'}
                     </p>
                 </div>
                 
                 <div className="flex items-center gap-2">
-                    {/* NOTIFICATION BELL */}
-                    <div className="relative" ref={notifRef}>
-                        <button 
-                            onClick={() => setShowNotifications(!showNotifications)}
-                            className={`p-2.5 rounded-xl border transition-all shadow-sm ${showNotifications ? 'bg-gray-100 dark:bg-zinc-800 text-gray-800 dark:text-white border-gray-300 dark:border-zinc-600' : 'bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800 text-gray-400 hover:text-lm-dark dark:hover:text-white hover:border-gray-300 dark:hover:border-gray-600'}`}
-                        >
-                            <Bell size={18} />
-                            {unreadCount > 0 && (
-                                <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 border-2 border-white dark:border-zinc-900 rounded-full"></span>
-                            )}
-                        </button>
-                        
-                        {showNotifications && (
-                            <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-gray-200 dark:border-zinc-800 overflow-hidden z-[60] animate-pop-in">
-                                <div className="p-3 border-b border-gray-100 dark:border-zinc-800 flex justify-between items-center bg-gray-50/50 dark:bg-zinc-800/30">
-                                    <span className="text-xs font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wide">Notificações</span>
-                                    {unreadCount > 0 && <span className="text-[10px] bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded font-bold">{unreadCount} nova(s)</span>}
-                                </div>
-                                <div className="max-h-80 overflow-y-auto custom-scrollbar">
-                                    {notifications.length === 0 ? (
-                                        <div className="p-8 text-center text-gray-400 text-xs">
-                                            Nenhuma notificação no momento.
-                                        </div>
-                                    ) : (
-                                        notifications.map(n => (
-                                            <div 
-                                                key={n.id} 
-                                                onClick={() => {
-                                                    markNotificationRead(n.id);
-                                                    handleNavigateToTask(Department.TODOS, undefined, n.taskId);
-                                                    setShowNotifications(false);
-                                                }}
-                                                className={`p-3 border-b border-gray-100 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800 cursor-pointer transition-colors relative ${!n.isRead ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}
-                                            >
-                                                {!n.isRead && <div className="absolute left-2 top-4 w-1.5 h-1.5 bg-blue-500 rounded-full"></div>}
-                                                <div className="pl-3">
-                                                    <div className="flex justify-between items-start mb-1">
-                                                        <span className="font-bold text-xs text-gray-800 dark:text-gray-200">{n.sender}</span>
-                                                        <span className="text-[9px] text-gray-400">{n.timestamp.split(' ')[0]}</span>
-                                                    </div>
-                                                    <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-2">{n.message}</p>
-                                                    <div className="mt-1.5">
-                                                        <span className="text-[9px] font-mono bg-gray-100 dark:bg-zinc-800 text-gray-500 px-1 py-0.5 rounded border border-gray-200 dark:border-zinc-700">#{n.taskId}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
                     <button onClick={() => refreshData()} className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 p-2.5 rounded-xl text-gray-400 hover:text-lm-dark dark:hover:text-white hover:border-gray-300 dark:hover:border-gray-600 transition-all shadow-sm">
                         <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
                     </button>
@@ -324,7 +279,7 @@ const App: React.FC = () => {
           </div>
       </div>
 
-      <div className="flex-1 overflow-x-auto overflow-y-hidden p-4 lg:p-8 pt-4">
+      <div className="flex-1 overflow-x-auto overflow-y-hidden p-2 lg:p-6 pt-2 max-w-7xl mx-auto w-full">
             {currentDept === Department.TODOS ? (
                 <OverviewTable 
                     tasks={filteredTasks} 
@@ -368,13 +323,48 @@ const App: React.FC = () => {
 
   return (
     <div className={`flex h-screen w-full bg-gray-50 dark:bg-black text-gray-900 dark:text-gray-100 font-sans overflow-hidden transition-colors ${settings.reduceMotion ? '' : 'duration-300'}`}>
-      <Sidebar isOpen={sidebarOpen} toggleSidebar={() => setSidebarOpen(!sidebarOpen)} activeView={activeView} setActiveView={setActiveView} />
-      <main className={`flex-1 flex flex-col h-full relative shadow-2xl rounded-l-[30px] overflow-hidden bg-white dark:bg-black ml-[-20px] z-0 transition-colors border-l border-gray-200 dark:border-zinc-900 ${settings.reduceMotion ? '' : 'duration-300'}`}>
+      <style>{`
+        @keyframes shake {
+          0%, 100% { transform: rotate(0deg); }
+          20% { transform: rotate(-15deg); }
+          40% { transform: rotate(10deg); }
+          60% { transform: rotate(-5deg); }
+          80% { transform: rotate(5deg); }
+        }
+        .animate-shake {
+          animation: shake 2s infinite;
+          transform-origin: top center;
+          display: inline-block;
+        }
+      `}</style>
+      <Sidebar 
+        isOpen={sidebarOpen} 
+        toggleSidebar={() => setSidebarOpen(!sidebarOpen)} 
+        activeView={activeView} 
+        setActiveView={setActiveView} 
+        onNavigate={(taskId) => handleNavigateToTask(Department.TODOS, undefined, taskId)}
+        clearFilters={clearFilters}
+      />
+      <main className={`flex-1 flex flex-col h-full relative shadow-2xl rounded-l-[30px] overflow-hidden bg-white dark:bg-black ml-[-20px] z-0 transition-colors border-l border-gray-200 dark:border-zinc-900 ${settings.reduceMotion ? '' : 'duration-500'}`}>
         <div className="flex-1 w-full h-full overflow-hidden">
-            {(activeView === 'kanban' || activeView === 'my_obligations') && renderKanbanView()}
-            {activeView === 'reports' && <ReportsDashboard />}
-            {activeView === 'team' && <TeamView />}
-            {activeView === 'settings' && <SettingsView />}
+            <AnimatePresence mode="wait">
+                <motion.div
+                    key={activeView}
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -10 }}
+                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    className="w-full h-full"
+                >
+                    {activeView === 'my_day' && <MyDay onNavigate={(taskId) => handleNavigateToTask(Department.TODOS, undefined, taskId)} />}
+                    {(activeView === 'kanban' || activeView === 'my_obligations') && renderKanbanView()}
+                    {activeView === 'reports' && <ReportsDashboard />}
+                    {activeView === 'team' && <TeamView />}
+                    {activeView === 'companies' && <CompaniesView />}
+                    {activeView === 'audit_log' && <AuditLogView />}
+                    {activeView === 'settings' && <SettingsView />}
+                </motion.div>
+            </AnimatePresence>
         </div>
       </main>
       {selectedTask && <TaskDrawer task={selectedTask} isOpen={!!selectedTask} onClose={() => setSelectedTask(null)} onNotify={(title, msg) => addNotification(title, msg, 'success')} />}

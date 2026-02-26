@@ -20,12 +20,18 @@ export type StatusECF = 'ENVIADA' | 'PENDENTE' | 'NÃO SE APLICA';
 export type Priority = 'ALTA' | 'MÉDIA' | 'BAIXA' | ''; // Added empty string for auto-calc
 
 export interface Collaborator {
+  uuid?: string; // Supabase internal ID
   id: string; // ID DE ENTRADA (Col A)
   name: string; // NOME DO COLABORADOR (Col B)
   department?: string; // DEPARTAMENTO (Col C)
+  lastSeen?: string; // ISO Date String
+  role?: 'admin' | 'user';
+  active?: boolean;
+  deleted_at?: string | null; // Soft Delete timestamp
 }
 
 export interface CompanyTask {
+  uuid?: string; // Supabase internal ID
   id: string; // Código da empresa (Col A)
   name: string; // Nome (Col B)
   cnpj: string; // CNPJ (Col C)
@@ -68,6 +74,13 @@ export interface CompanyTask {
 
   // Controle interno para saber em qual linha do Google Sheets escrever
   rowIndex?: number; 
+  
+  // Soft Delete
+  active?: boolean;
+  deleted_at?: string | null;
+
+  // Vigência (Yearly Cycles)
+  ano?: string;
 }
 
 export interface KanbanColumn {
@@ -104,13 +117,13 @@ export const COLUMNS_REINF: KanbanColumn[] = [
   { id: 'PENDENTE', title: 'Pendente', color: 'bg-red-100' },
   { id: 'EFD ENVIADA', title: 'EFD Enviada', color: 'bg-green-100' },
   { id: 'AGUARDANDO RETIFICAÇÃO', title: 'Aguardando Retificação', color: 'bg-orange-100' },
-  { id: 'EFD RETIFICADA', title: 'EFD Retificada', color: 'bg-blue-100' }
+  { id: 'EFD RETIFICADA', title: 'EFD Retificada', color: 'bg-purple-100' }
 ];
 
 export const COLUMNS_ECD: KanbanColumn[] = [
   { id: 'PENDENTE', title: 'Pendente', color: 'bg-red-100' },
   { id: 'ENVIADA', title: 'Enviada', color: 'bg-green-100' },
-  { id: 'DISPENSADA', title: 'Dispensada', color: 'bg-blue-100' }
+  { id: 'DISPENSADA', title: 'Dispensada', color: 'bg-zinc-100' }
 ];
 
 // --- NOVOS TIPOS PARA DETALHES ---
@@ -127,6 +140,8 @@ export interface TaskComment {
     author: string;
     text: string;
     rowIndex?: number; // Para edição/exclusão
+    reactions?: Record<string, string[]>; // { "👍": ["User1", "User2"], "✔️": ["User3"] }
+    parentId?: string | null; // ID of the parent comment
 }
 
 export interface TaskDetail {
@@ -141,8 +156,18 @@ export interface UserSettings {
     autoRefresh: boolean;
     reduceMotion: boolean;
     defaultDepartment: Department;
+    defaultYear?: string; // Novo campo
+    defaultTab?: 'my_day' | 'my_obligations' | 'kanban' | 'reports' | 'team' | 'settings'; // Novo campo
     enableNotifications: boolean;
+    notificationPreferences: {
+        mentions: boolean;
+        myTasks: boolean;
+        general: boolean;
+    };
     theme: 'light' | 'dark';
+    adminMode: boolean;
+    pinnedTasks?: string[];
+    readDeadlineNotifications?: string[];
 }
 
 export interface AppNotification {

@@ -2,11 +2,16 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Collaborator } from '../types';
 import { fetchAllDataBatch } from '../services/sheetService';
-import { ADMIN_IDS } from '../config/app';
+import { fetchAllDataSupabase, updateUserPresenceSupabase } from '../services/supabaseService';
+import { supabase } from '../services/supabaseClient';
+import { ADMIN_IDS, USE_SUPABASE } from '../config/app';
 
 interface AuthContextType {
   currentUser: Collaborator | null;
   isAdmin: boolean;
+  isEffectiveAdmin: boolean;
+  adminMode: boolean;
+  setAdminMode: (mode: boolean) => void;
   login: (id: string) => Promise<boolean>;
   logout: () => void;
   loginAlert: { type: 'warning' | 'error' | 'info'; message: string } | null;
@@ -18,22 +23,52 @@ const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 Minutos
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<Collaborator | null>(null);
+  const [adminMode, setAdminModeState] = useState<boolean>(() => localStorage.getItem('lm_adminMode') === 'true');
   const [loginAlert, setLoginAlert] = useState<{ type: 'warning' | 'error' | 'info'; message: string } | null>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const isAdmin = currentUser ? ADMIN_IDS.includes(currentUser.id) : false;
+  const isAdmin = currentUser ? (currentUser.role === 'admin' || ADMIN_IDS.includes(currentUser.id)) : false;
+  const isEffectiveAdmin = isAdmin && adminMode;
 
-  // Restore session
+  const setAdminMode = (mode: boolean) => {
+      setAdminModeState(mode);
+      localStorage.setItem('lm_adminMode', String(mode));
+  };
+
+  // Restore session & Refresh User Data
   useEffect(() => {
     const savedUser = localStorage.getItem('lm_user');
     if (savedUser) {
         try {
-            setCurrentUser(JSON.parse(savedUser));
+            const parsedUser = JSON.parse(savedUser);
+            setCurrentUser(parsedUser);
+            
+            // Refresh user data from server to get latest role/permissions
+            if (USE_SUPABASE && supabase) {
+                fetchAllDataSupabase().then(data => {
+                    const freshUser = data.collaborators.find(c => c.id === parsedUser.id);
+                    if (freshUser) {
+                        // Check if role or other critical data changed
+                        if (JSON.stringify(freshUser) !== JSON.stringify(parsedUser)) {
+                            console.log("Refreshing user session data...", freshUser);
+                            setCurrentUser(freshUser);
+                            localStorage.setItem('lm_user', JSON.stringify(freshUser));
+                        }
+                    }
+                }).catch(err => console.error("Failed to refresh session:", err));
+            }
         } catch (e) {
             localStorage.removeItem('lm_user');
         }
     }
   }, []);
+
+  // Debug Admin Status
+  useEffect(() => {
+      if (currentUser) {
+          console.log(`[Auth] User: ${currentUser.name} | Role: ${currentUser.role} | IsAdmin: ${isAdmin}`);
+      }
+  }, [currentUser, isAdmin]);
 
   const resetIdleTimer = useCallback(() => {
     if (!currentUser) return;
@@ -66,29 +101,88 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoginAlert(null);
       try {
           // Fetch simple batch to verify user exists
-          const { collaborators } = await fetchAllDataBatch();
+          let collaborators: Collaborator[] = [];
+          let usedSupabase = false;
+          
+          if (USE_SUPABASE && supabase) {
+              const data = await fetchAllDataSupabase();
+              collaborators = data.collaborators;
+              usedSupabase = true;
+          } 
+          
+          // Fallback to Sheets if Supabase is disabled, missing, or empty (to allow migration)
+          if (collaborators.length === 0) {
+              const data = await fetchAllDataBatch();
+              collaborators = data.collaborators;
+              usedSupabase = false;
+          }
+
           const user = collaborators.find(c => c.id === id);
           
           if (user) {
+              if (user.active === false) {
+                  throw new Error('Sua conta foi desativada. Entre em contato com o administrador.');
+              }
               setCurrentUser(user);
               localStorage.setItem('lm_user', JSON.stringify(user));
+              if (usedSupabase && USE_SUPABASE) {
+                  console.log("Logged in via Supabase");
+                  updateUserPresenceSupabase(user.id).catch(console.error);
+              } else if (USE_SUPABASE) {
+                  console.log("Logged in via Sheets (Fallback for migration)");
+              }
               return true;
           }
           return false;
-      } catch (e) {
+      } catch (e: any) {
           console.error("Login error", e);
           throw e;
       }
   };
 
+  // Real-time Active Status Check
+  useEffect(() => {
+      if (!currentUser || !USE_SUPABASE || !supabase) return;
+
+      const channel = supabase
+          .channel(`user-status-${currentUser.id}`)
+          .on(
+              'postgres_changes',
+              { 
+                  event: 'UPDATE', 
+                  schema: 'public', 
+                  table: 'colaboradores', 
+                  filter: `codigo_externo=eq.${currentUser.id}` 
+              },
+              (payload) => {
+                  const newUser = payload.new as any;
+                  if (newUser.active === false) {
+                      setLoginAlert({
+                          type: 'error',
+                          message: 'Sua conta foi desativada pelo administrador.'
+                      });
+                      logout();
+                  }
+              }
+          )
+          .subscribe();
+
+      return () => {
+          supabase.removeChannel(channel);
+      };
+  }, [currentUser]);
+
   const logout = () => {
+      if (currentUser && USE_SUPABASE) {
+          updateUserPresenceSupabase(currentUser.id).catch(console.error);
+      }
       setCurrentUser(null);
       localStorage.removeItem('lm_user');
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, isAdmin, login, logout, loginAlert }}>
+    <AuthContext.Provider value={{ currentUser, isAdmin, isEffectiveAdmin, adminMode, setAdminMode, login, logout, loginAlert }}>
       {children}
     </AuthContext.Provider>
   );

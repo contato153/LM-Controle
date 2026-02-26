@@ -136,7 +136,7 @@ let tokenExpiry: number = 0;
 let tokenRequestPromise: Promise<string> | null = null;
 
 // Obtém o token de acesso real trocando o JWT (Singleton Promise pattern)
-async function getAccessToken() {
+export async function getAccessToken() {
     // Se temos token válido, usa ele
     if (cachedToken && Date.now() < tokenExpiry) {
         return cachedToken;
@@ -190,7 +190,7 @@ async function getAccessToken() {
 // --- API HELPERS ---
 
 // Helper com Retry Exponencial para lidar com erro 429
-async function fetchWithRetry(url: string, options: RequestInit, retries = 3, delay = 2000): Promise<Response> {
+export async function fetchWithRetry(url: string, options: RequestInit, retries = 3, delay = 2000): Promise<Response> {
     let lastError: any;
     
     for (let i = 0; i < retries; i++) {
@@ -379,7 +379,9 @@ export const fetchLogs = async (): Promise<string[][]> => {
 
 // Extracted Collaborator Parser
 const parseCollaborators = (rows: any[]): Collaborator[] => {
-    if (!rows) return [];
+    if (!rows || rows.length === 0) return [];
+    // O range começa em A2 (Linha 2). O usuário disse que para outros a data começa na Linha 2.
+    // Portanto, não pulamos nada se o range já começa em A2.
     return rows.map((row: any[]) => {
         const id = row[0] || '';
         const name = row[1] || '';
@@ -395,15 +397,16 @@ const parseCollaborators = (rows: any[]): Collaborator[] => {
             name,
             department
         };
-    }).filter((c: Collaborator) => c.name);
+    }).filter((c: Collaborator) => c.name && c.name.toLowerCase() !== 'nome');
 }
 
 // Converte as linhas da API
 const parseSheetRows = (rows: any[]): CompanyTask[] => {
-  if (!rows) return [];
-  // Importante: rowIndex começa em 2 porque range é A2. 
-  // O índice 0 do array rows corresponde à linha 2 do Excel.
-  return rows.map((row, index) => ({
+  if (!rows || rows.length <= 1) return [];
+  // O usuário informou que a linha 1 é menu e a linha 2 é cabeçalho.
+  // Portanto, os dados começam na linha 3 (índice 1 do array rows, se o range começar em A2).
+  // Se o range é A2:AB, rows[0] é a linha 2 (cabeçalho).
+  return rows.slice(1).map((row, index) => ({
     id: row[COL_INDEX.ID] || '',
     name: row[COL_INDEX.NAME] || '',
     cnpj: row[COL_INDEX.CNPJ] || '',
@@ -432,13 +435,13 @@ const parseSheetRows = (rows: any[]): CompanyTask[] => {
     statusECF: row[COL_INDEX.STATUS_ECF] || 'PENDENTE',
     respECF: row[COL_INDEX.RESP_ECF] || '',
     
-    prioridade: row[COL_INDEX.PRIORIDADE] || '', // Changed default to empty string to allow auto-calc
+    prioridade: row[COL_INDEX.PRIORIDADE] || '', 
     lastEditor: row[COL_INDEX.LAST_EDITOR] || '',
     
     // Coluna AB (27)
     dueDate: row[COL_INDEX.DUE_DATE] || '',
 
-    rowIndex: index + 2 
+    rowIndex: index + 3 
   }))
   .filter(t => t.id && t.id.trim() !== '' && t.id.toLowerCase() !== 'código' && t.name.toLowerCase() !== 'nome');
 };

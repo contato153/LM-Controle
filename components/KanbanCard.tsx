@@ -6,6 +6,7 @@ import { Building2, AlertTriangle, User, Lock, Search, History, Calendar, Clock 
 import { useAuth } from '../contexts/AuthContext';
 import { useTasks } from '../contexts/TasksContext';
 import { useToast } from '../contexts/ToastContext';
+import { motion } from 'framer-motion';
 
 interface KanbanCardProps {
   task: CompanyTask;
@@ -26,6 +27,7 @@ const parseBrDate = (str: string) => {
 const toIsoDate = (brDate?: string) => {
     if (!brDate || brDate.length !== 10) return '';
     const [day, month, year] = brDate.split('/');
+    if (year.startsWith('00')) return `20${year.substring(2)}-${month}-${day}`;
     return `${year}-${month}-${day}`;
 };
 
@@ -43,8 +45,8 @@ const KanbanCard: React.FC<KanbanCardProps> = memo(({
     onClick, 
     responsibleField
 }) => {
-  const { currentUser, isAdmin } = useAuth();
-  const { updateTask, collaborators } = useTasks();
+  const { currentUser, isAdmin, isEffectiveAdmin } = useAuth();
+  const { updateTask, collaborators, onlineUsers } = useTasks();
   const { addNotification } = useToast();
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -90,7 +92,7 @@ const KanbanCard: React.FC<KanbanCardProps> = memo(({
 
   const isContabilContext = currentDept === Department.CONTABIL; 
   const fiscalFinished = isFiscalFinished(task.statusFiscal);
-  const isBlocked = isContabilContext && !fiscalFinished && !isAdmin;
+  const isBlocked = isContabilContext && !fiscalFinished && !isEffectiveAdmin;
 
   const responsible = task[responsibleField] as string;
   
@@ -98,7 +100,7 @@ const KanbanCard: React.FC<KanbanCardProps> = memo(({
   const effectivePriority = getEffectivePriority(task);
   const isHighPriority = effectivePriority === 'ALTA';
   
-  const availableCollaborators = isAdmin 
+  const availableCollaborators = isEffectiveAdmin 
       ? collaborators 
       : collaborators.filter(c => c.id === currentUser?.id);
 
@@ -116,7 +118,7 @@ const KanbanCard: React.FC<KanbanCardProps> = memo(({
           addNotification("Movimentação Bloqueada", "O Departamento Fiscal deve finalizar esta tarefa antes que ela possa ser movida no Contábil.", "warning");
           return;
       }
-      if (!isAdmin && !responsible) {
+      if (!isEffectiveAdmin && !responsible) {
           e.preventDefault();
           addNotification("Ação Bloqueada", "É necessário atribuir um responsável antes de mover esta tarefa.", "warning");
           return;
@@ -139,7 +141,7 @@ const KanbanCard: React.FC<KanbanCardProps> = memo(({
       const regime = r.toUpperCase();
       if (regime.includes('REAL')) return 'bg-gray-800 dark:bg-zinc-700 text-white dark:text-white border-gray-800 dark:border-zinc-600'; 
       if (regime.includes('PRESUMIDO')) return 'bg-lm-yellow text-gray-900 border-lm-yellow';
-      if (regime.includes('SIMPLES')) return 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800';
+      if (regime.includes('SIMPLES')) return 'bg-zinc-100 dark:bg-zinc-800/60 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700';
       if (regime.includes('IMUNE') || regime.includes('ISENTA')) return 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800';
       return 'bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-zinc-600';
   }
@@ -208,11 +210,15 @@ const KanbanCard: React.FC<KanbanCardProps> = memo(({
   };
 
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0 }}
       draggable={!isDropdownOpen} 
       onDragStart={handleDragStart}
       onClick={() => { if (!isDropdownOpen && onClick) onClick(task); }}
-      className={`relative rounded-xl border transition-all duration-200 group ${mb} ${isHighPriority ? 'border-red-200 dark:border-red-900/60 shadow-[0_0_10px_rgba(220,38,38,0.1)]' : 'border-gray-200 dark:border-zinc-700 shadow-sm hover:shadow-card'} bg-white dark:bg-zinc-900 hover:-translate-y-0.5 hover:shadow-md ${isDropdownOpen ? 'z-40' : 'z-0'} ${isBlocked ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'} select-none`}
+      className={`relative rounded-xl border group overflow-hidden ${mb} ${isHighPriority ? 'border-red-200 dark:border-red-900/60 shadow-[0_0_10px_rgba(220,38,38,0.1)]' : 'border-gray-200 dark:border-zinc-700 shadow-sm hover:shadow-card'} bg-white dark:bg-zinc-900 hover:-translate-y-0.5 hover:shadow-md ${isDropdownOpen ? 'z-40' : 'z-0'} ${isBlocked ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'} select-none`}
     >
       {isBlocked && (
           <div className="absolute top-2 right-2 z-10 text-gray-400 dark:text-gray-600 bg-gray-100 dark:bg-zinc-800 p-1.5 rounded-lg border border-gray-200 dark:border-zinc-700 shadow-sm" title="O Fiscal precisa ser finalizado primeiro">
@@ -228,7 +234,7 @@ const KanbanCard: React.FC<KanbanCardProps> = memo(({
                  <div className="flex items-center gap-2 mb-0.5">
                     <span className="font-mono text-[10px] font-bold text-gray-400 dark:text-gray-500">#{task.id}</span>
                     {isHighPriority && (
-                        <div className="flex items-center gap-0.5 text-[9px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 px-1 rounded animate-pulse">
+                        <div className="flex items-center gap-0.5 text-[9px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 px-1 rounded">
                             <AlertTriangle size={8} />
                             PRIORIDADE
                         </div>
@@ -275,7 +281,7 @@ const KanbanCard: React.FC<KanbanCardProps> = memo(({
             >
                 {/* Visible Part */}
                 <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase transition-all pointer-events-none ${dateStyle}`}>
-                     <DateIcon size={10} />
+                     <DateIcon size={10} className="pointer-events-none" />
                      <span className="min-w-[40px] text-center">{task.dueDate || 'DATA'}</span>
                 </div>
                 
@@ -284,9 +290,10 @@ const KanbanCard: React.FC<KanbanCardProps> = memo(({
                     type="date" 
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 date-input-full"
                     onChange={handleDateChange}
-                    onClick={(e) => e.stopPropagation()} // Stop click bubbling
+                    onKeyDown={(e) => e.preventDefault()}
                     onMouseDown={(e) => e.stopPropagation()} // Stop drag
                     onPointerDown={(e) => e.stopPropagation()} // Stop drag
+                    onClick={(e) => e.stopPropagation()} // Stop opening TaskDrawer
                     value={toIsoDate(task.dueDate)}
                 />
             </div>
@@ -359,7 +366,12 @@ const KanbanCard: React.FC<KanbanCardProps> = memo(({
                                     }`}
                                 >
                                     {c.name}
-                                    {responsible === c.name && <div className="w-1.5 h-1.5 rounded-full bg-lm-yellow"></div>}
+                                    <div className="flex items-center gap-2">
+                                        {onlineUsers.includes(String(c.id)) && (
+                                            <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_5px_rgba(34,197,94,0.5)]"></div>
+                                        )}
+                                        {responsible === c.name && <div className="w-1.5 h-1.5 rounded-full bg-lm-yellow"></div>}
+                                    </div>
                                 </button>
                             ))}
                         </div>
@@ -376,8 +388,29 @@ const KanbanCard: React.FC<KanbanCardProps> = memo(({
             </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
+}, (prev, next) => {
+    return (
+        prev.task.id === next.task.id &&
+        prev.task.name === next.task.name &&
+        prev.task.cnpj === next.task.cnpj &&
+        prev.task.regime === next.task.regime &&
+        prev.task.prioridade === next.task.prioridade &&
+        prev.task.dueDate === next.task.dueDate &&
+        prev.task.statusFiscal === next.task.statusFiscal &&
+        prev.task.statusContabil === next.task.statusContabil &&
+        prev.task.statusBalanco === next.task.statusBalanco &&
+        prev.task.statusReinf === next.task.statusReinf &&
+        prev.task.respFiscal === next.task.respFiscal &&
+        prev.task.respContabil === next.task.respContabil &&
+        prev.task.respBalanco === next.task.respBalanco &&
+        prev.task.respReinf === next.task.respReinf &&
+        prev.task.lastEditor === next.task.lastEditor &&
+        prev.currentDept === next.currentDept &&
+        prev.density === next.density &&
+        prev.responsibleField === next.responsibleField
+    );
 });
 
 const ChevronDown = ({ size, className }: { size: number, className: string }) => (

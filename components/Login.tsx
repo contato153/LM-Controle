@@ -28,8 +28,8 @@ const Login: React.FC = () => {
             setInternalError('ID não encontrado.');
             setIsLoading(false);
         }
-    } catch (err) {
-        setInternalError('Erro de conexão. Tente novamente.');
+    } catch (err: any) {
+        setInternalError(err.message || 'Erro de conexão. Tente novamente.');
         setIsLoading(false);
     }
   };
