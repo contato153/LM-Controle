@@ -2,7 +2,7 @@
 
 export const APP_INFO = {
   name: 'L&M Controle',
-  version: 'v3.0.0'
+  version: 'v3.0.1'
 };
 
 // Toggle this to true to switch to Supabase backend
