@@ -30,13 +30,13 @@ const ReportsDashboard: React.FC = () => {
         subtitle: string;
         includeCharts: boolean;
         includeTable: boolean;
-        orientation: 'portrait' | 'landscape';
+        orientation: 'landscape';
     }>({
         title: 'Relatório Gerencial de Obrigações',
         subtitle: '',
         includeCharts: true,
         includeTable: true,
-        orientation: 'landscape'
+        orientation: 'landscape',
     });
 
     // Custom Hooks
@@ -67,7 +67,7 @@ const ReportsDashboard: React.FC = () => {
             filterResponsible: filters.responsible,
             includeCharts: reportConfig.includeCharts,
             includeTable: reportConfig.includeTable,
-            orientation: reportConfig.orientation
+            orientation: reportConfig.orientation,
         }, () => setShowConfigModal(false));
     };
 

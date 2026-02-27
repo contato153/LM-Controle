@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { CompanyTask, Collaborator, UserSettings, TaskComment, AppNotification } from '../types';
+import { CompanyTask, Collaborator, UserSettings, TaskComment, AppNotification, TaxRegime } from '../types';
 
 // --- MAPPERS ---
 
@@ -125,7 +125,8 @@ export const fetchAllDataSupabase = async (year?: string): Promise<{
             uuid: c.id,
             id: c.codigo_externo || '',
             name: c.nome || '',
-            department: c.departamento || '',
+            department: c.department || '',
+            permissions: c.permissions || [],
             lastSeen: c.last_seen || null,
             role: c.role || (c.is_admin ? 'admin' : 'user'),
             active: c.active !== false,
@@ -216,7 +217,8 @@ export const fetchTrashSupabase = async (year?: string): Promise<{ tasks: Compan
             uuid: c.id,
             id: c.codigo_externo || '',
             name: c.nome || '',
-            department: c.departamento || '',
+            department: c.department || '',
+            permissions: c.permissions || [],
             lastSeen: c.last_seen || null,
             role: c.role || (c.is_admin ? 'admin' : 'user'),
             active: c.active !== false,
@@ -701,26 +703,30 @@ export const saveTaskDetailSupabase = async (detail: any, year?: string): Promis
     if (error) console.error("Error saving detail:", error);
 };
 
-export const fetchLogsPaginatedSupabase = async (taskId: string, page: number, pageSize: number = 20, year?: string): Promise<{ logs: string[][], hasMore: boolean }> => {
-    if (!supabase) return { logs: [], hasMore: false };
+export const fetchLogsPaginatedSupabase = async (taskId: string, page: number, pageSize: number = 20, year?: string): Promise<{ logs: string[][], hasMore: boolean, totalCount: number }> => {
+    if (!supabase) return { logs: [], hasMore: false, totalCount: 0 };
     
     const from = page * pageSize;
     const to = from + pageSize - 1;
 
     let query = supabase
         .from('registros')
-        .select('*', { count: 'exact' })
-        .eq('empresa_id', taskId)
-        .order('created_at', { ascending: false })
-        .range(from, to);
+        .select('*', { count: 'exact' });
+
+    if (taskId) {
+        query = query.eq('empresa_id', taskId);
+    }
 
     if (year) {
         query = query.eq('ano', year);
     }
 
+    query = query.order('created_at', { ascending: false })
+        .range(from, to);
+
     const { data, error, count } = await query;
 
-    if (error || !data) return { logs: [], hasMore: false };
+    if (error || !data) return { logs: [], hasMore: false, totalCount: 0 };
 
     const logs = data.map((l: any) => [
         new Date(l.created_at).toLocaleString('pt-BR'),
@@ -730,7 +736,7 @@ export const fetchLogsPaginatedSupabase = async (taskId: string, page: number, p
     ]);
 
     const hasMore = count ? (to < count - 1) : false;
-    return { logs, hasMore };
+    return { logs, hasMore, totalCount: count || 0 };
 };
 
 export const fetchLogsSupabase = async (taskId?: string): Promise<string[][]> => {
@@ -769,7 +775,8 @@ export const createCollaboratorSupabase = async (collaborator: Collaborator): Pr
         const { error } = await supabase.from('colaboradores').insert({
             codigo_externo: collaborator.id,
             nome: collaborator.name,
-            departamento: collaborator.department,
+            department: collaborator.department,
+            permissions: collaborator.permissions,
             role: collaborator.role || 'user'
         });
         if (error) throw error;
@@ -787,7 +794,8 @@ export const updateCollaboratorSupabase = async (collaborator: Collaborator): Pr
             .update({
                 codigo_externo: collaborator.id,
                 nome: collaborator.name,
-                departamento: collaborator.department,
+                department: collaborator.department,
+                permissions: collaborator.permissions,
                 role: collaborator.role
             })
             .eq(collaborator.uuid ? 'id' : 'codigo_externo', collaborator.uuid || collaborator.id);
@@ -826,8 +834,10 @@ export const deleteCollaboratorSupabase = async (collaboratorId: string): Promis
     }
 };
 
+let isUpdatingPresence = false;
 export const updateUserPresenceSupabase = async (userId: string): Promise<void> => {
-    if (!supabase || !userId) return;
+    if (!supabase || !userId || isUpdatingPresence) return;
+    isUpdatingPresence = true;
     try {
         const { error } = await supabase
             .from('colaboradores')
@@ -843,12 +853,15 @@ export const updateUserPresenceSupabase = async (userId: string): Promise<void> 
             throw error;
         }
     } catch (e: any) {
-        // Suppress "Failed to fetch" errors for heartbeat as they are expected during network blips
-        if (e.message?.includes('Failed to fetch') || e.name === 'TypeError') {
-            console.warn("Falha ao atualizar presença (problema de rede provisório).");
-            return;
+        // Suppress "Failed to fetch" or LockManager errors for heartbeat
+        const msg = e.message || '';
+        if (msg.includes('LockManager') || msg.includes('Failed to fetch') || e.name === 'TypeError') {
+            console.warn("Supabase heartbeat suppressed due to lock/network issue:", msg);
+        } else {
+            console.error("Erro ao atualizar presença no Supabase:", e);
         }
-        console.error("Erro ao atualizar presença no Supabase:", e);
+    } finally {
+        isUpdatingPresence = false;
     }
 };
 
@@ -1016,5 +1029,71 @@ export const verifySecurityPasswordSupabase = async (password: string): Promise<
     } catch (error) {
         console.error("Error verifying security password:", error);
         return false;
+    }
+};
+
+// --- TAX REGIMES ---
+
+export const fetchTaxRegimesSupabase = async (): Promise<TaxRegime[]> => {
+    if (!supabase) return [];
+    try {
+        const { data, error } = await supabase
+            .from('tax_regimes')
+            .select('*')
+            .order('name', { ascending: true });
+
+        if (error) throw error;
+
+        return (data || []).map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            created_at: r.created_at,
+            created_by: r.created_by
+        }));
+    } catch (error) {
+        console.error("Error fetching tax regimes:", error);
+        return [];
+    }
+};
+
+export const createTaxRegimeSupabase = async (name: string, userName: string): Promise<TaxRegime | null> => {
+    if (!supabase) return null;
+    try {
+        const { data, error } = await supabase
+            .from('tax_regimes')
+            .insert({ name, created_by: userName })
+            .select()
+            .single();
+
+        if (error) throw error;
+        
+        await logChangeSupabase(`Novo regime tributário criado: ${name}`, userName);
+        
+        return {
+            id: data.id,
+            name: data.name,
+            created_at: data.created_at,
+            created_by: data.created_by
+        };
+    } catch (error) {
+        console.error("Error creating tax regime:", error);
+        throw error;
+    }
+};
+
+export const deleteTaxRegimeSupabase = async (id: string, name: string, userName: string): Promise<void> => {
+    if (!supabase) return;
+    try {
+        const { error } = await supabase
+            .from('tax_regimes')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+        
+        await logChangeSupabase(`Regime tributário excluído: ${name}`, userName);
+    } catch (error) {
+        console.error("Error deleting tax regime:", error);
+        throw error;
     }
 };

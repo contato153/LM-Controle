@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect, memo, useMemo, useCallback, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { CompanyTask, Department, isFiscalFinished, getEffectivePriority, COLUMNS_FISCAL, COLUMNS_CONTABIL, COLUMNS_BALANCO, COLUMNS_REINF, COLUMNS_LUCRO_REINF, COLUMNS_ECD } from '../types';
+import { CompanyTask, DemandType, isFiscalFinished, getEffectivePriority, COLUMNS_FISCAL, COLUMNS_CONTABIL, COLUMNS_BALANCO, COLUMNS_REINF, COLUMNS_LUCRO_REINF, COLUMNS_ECD } from '../types';
 import { Building2, UserCircle2, Search, AlertCircle, History, Lock, CheckSquare, Square, Trash2, UserPlus, Zap, ChevronDown, ChevronRight, ChevronLeft, Check, X, Loader2, Pin, PinOff } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTasks } from '../contexts/TasksContext';
@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 interface OverviewTableProps {
   tasks: CompanyTask[];
-  onNavigate: (dept: Department, subView?: 'LUCRO' | 'REINF' | 'BALANCETE' | 'BALANCO', taskId?: string) => void;
+  onNavigate: (dept: DemandType, subView?: 'LUCRO' | 'REINF' | 'BALANCETE' | 'BALANCO', taskId?: string) => void;
   onTaskSelect: (task: CompanyTask) => void;
   activeView?: string; 
 }
@@ -80,11 +80,12 @@ const ResponsibleSelect = ({ value, field, task, isOpen, onToggle, onClose, disa
 
     if (disabled) {
         return (
-            <div className="flex items-center gap-2 px-2 py-1.5 opacity-50 cursor-not-allowed group relative bg-gray-50 dark:bg-zinc-800/50 rounded-lg border border-transparent w-full">
+            <div className="flex items-center gap-2 px-2 py-1.5 opacity-70 cursor-not-allowed group relative bg-transparent rounded-lg border border-transparent w-full" title="Você não tem permissão para alterar este campo">
                  <div className="w-5 h-5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-400 dark:text-gray-500 flex items-center justify-center font-bold text-[9px] border border-gray-200 dark:border-zinc-700 flex-shrink-0">
-                     <Lock size={10}/>
+                     {value ? value.charAt(0) : <UserCircle2 size={12}/>}
                  </div>
-                 <span className="truncate font-medium text-xs text-gray-400 dark:text-gray-500 flex-1">Bloqueado</span>
+                 <span className="truncate font-medium text-xs text-gray-500 dark:text-gray-400 flex-1">{value || 'Vazio'}</span>
+                 <Lock size={12} className="text-gray-300 dark:text-gray-600"/>
             </div>
         );
     }
@@ -136,18 +137,20 @@ const ResponsibleSelect = ({ value, field, task, isOpen, onToggle, onClose, disa
 }
 
 const TableRow = memo(({ task, index, activeDropdown, onTaskSelect, onNavigate, handleToggle, setActiveDropdown, px, py, itemHeight, isSelected, onSelect, isPinned, onTogglePin }: any) => {
-    const { isEffectiveAdmin, currentUser } = useAuth();
+    const { isEffectiveAdmin, currentUser, hasPermission } = useAuth();
     const fiscalFinished = isFiscalFinished(task.statusFiscal);
 
     const canEdit = (field: keyof CompanyTask) => {
         if (isEffectiveAdmin) return true;
         if (!fiscalFinished && ['statusContabil', 'statusBalanco'].includes(field)) return false;
-        if (!currentUser) return false;
-        const userDept = currentUser.department?.toUpperCase() || '';
-        const isFiscal = userDept.includes('FISCAL') || userDept.includes('TODOS');
-        const isContabil = userDept.includes('CONTÁBIL') || userDept.includes('CONTABIL') || userDept.includes('TODOS');
-        if (['respFiscal', 'statusFiscal', 'respReinf', 'statusReinf'].includes(field)) return isFiscal;
-        if (['respContabil', 'statusContabil', 'respBalanco', 'statusBalanco', 'respLucro', 'statusLucro', 'respECD', 'statusECD', 'respECF', 'statusECF'].includes(field)) return isContabil;
+        
+        if (['respFiscal', 'statusFiscal'].includes(field)) return hasPermission(DemandType.FISCAL);
+        if (['respContabil', 'statusContabil', 'respBalanco', 'statusBalanco'].includes(field)) return hasPermission(DemandType.CONTABIL);
+        if (['respReinf', 'statusReinf'].includes(field)) return hasPermission(DemandType.REINF) || hasPermission(DemandType.LUCRO_REINF);
+        if (['respLucro', 'statusLucro'].includes(field)) return hasPermission(DemandType.LUCRO) || hasPermission(DemandType.LUCRO_REINF);
+        if (['respECD', 'statusECD'].includes(field)) return hasPermission(DemandType.ECD);
+        if (['respECF', 'statusECF'].includes(field)) return hasPermission(DemandType.ECF);
+        
         return true;
     }
 
@@ -161,7 +164,7 @@ const TableRow = memo(({ task, index, activeDropdown, onTaskSelect, onNavigate, 
         return 'bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-zinc-600';
     }
 
-    const getStatusBadge = (task: CompanyTask, status: string, dept: Department, subView?: string, disabled: boolean = false) => {
+    const getStatusBadge = (task: CompanyTask, status: string, dept: DemandType, subView?: string, disabled: boolean = false) => {
         if (!status) return <span className="text-gray-300 dark:text-gray-600">-</span>;
         const s = status.toUpperCase();
         let colorClass = 'bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-zinc-600';
@@ -245,18 +248,18 @@ const TableRow = memo(({ task, index, activeDropdown, onTaskSelect, onNavigate, 
             </td>
             <td className={`${px} ${py}`}>
                 <div className="flex flex-col items-start gap-1 w-full overflow-hidden">
-                    {getStatusBadge(task, task.statusFiscal, Department.FISCAL)}
+                    {getStatusBadge(task, task.statusFiscal, DemandType.FISCAL)}
                     <ResponsibleSelect value={task.respFiscal} field="respFiscal" task={task} isOpen={activeDropdown === `${task.id}-respFiscal`} onToggle={() => handleToggle(`${task.id}-respFiscal`)} onClose={() => setActiveDropdown(null)} disabled={!canEdit('respFiscal')} />
                 </div>
             </td>
             <td className={`${px} ${py}`}>
                 <div className="flex flex-col gap-3 w-full overflow-hidden">
                     <div className="flex flex-col gap-1 border-l-2 border-indigo-100 dark:border-indigo-900/30 pl-2 overflow-hidden">
-                        <div className="flex items-center gap-2 overflow-hidden"><span className="text-[9px] font-bold text-gray-300 dark:text-gray-600 uppercase w-14 flex-shrink-0">Balancete</span><div className="overflow-hidden">{getStatusBadge(task, task.statusContabil, Department.CONTABIL, 'BALANCETE', !fiscalFinished && !isEffectiveAdmin)}</div></div>
+                        <div className="flex items-center gap-2 overflow-hidden"><span className="text-[9px] font-bold text-gray-300 dark:text-gray-600 uppercase w-14 flex-shrink-0">Balancete</span><div className="overflow-hidden">{getStatusBadge(task, task.statusContabil, DemandType.CONTABIL, 'BALANCETE', !fiscalFinished && !isEffectiveAdmin)}</div></div>
                         <ResponsibleSelect value={task.respContabil} field="respContabil" task={task} isOpen={activeDropdown === `${task.id}-respContabil`} onToggle={() => handleToggle(`${task.id}-respContabil`)} onClose={() => setActiveDropdown(null)} disabled={!canEdit('respContabil')} />
                     </div>
                     <div className="flex flex-col gap-1 border-l-2 border-teal-100 dark:border-teal-900/30 pl-2 overflow-hidden">
-                        <div className="flex items-center gap-2 overflow-hidden"><span className="text-[9px] font-bold text-gray-300 dark:text-gray-600 uppercase w-14 flex-shrink-0">Balanço</span><div className="overflow-hidden">{getStatusBadge(task, task.statusBalanco, Department.CONTABIL, 'BALANCO', !fiscalFinished && !isEffectiveAdmin)}</div></div>
+                        <div className="flex items-center gap-2 overflow-hidden"><span className="text-[9px] font-bold text-gray-300 dark:text-gray-600 uppercase w-14 flex-shrink-0">Balanço</span><div className="overflow-hidden">{getStatusBadge(task, task.statusBalanco, DemandType.CONTABIL, 'BALANCO', !fiscalFinished && !isEffectiveAdmin)}</div></div>
                         <ResponsibleSelect value={task.respBalanco} field="respBalanco" task={task} isOpen={activeDropdown === `${task.id}-respBalanco`} onToggle={() => handleToggle(`${task.id}-respBalanco`)} onClose={() => setActiveDropdown(null)} disabled={!canEdit('respBalanco')} />
                     </div>
                 </div>
@@ -264,11 +267,11 @@ const TableRow = memo(({ task, index, activeDropdown, onTaskSelect, onNavigate, 
             <td className={`${px} ${py}`}>
                 <div className="flex flex-col gap-3 w-full overflow-hidden">
                     <div className="flex flex-col gap-1 border-l-2 border-red-100 dark:border-red-900/30 pl-2 overflow-hidden">
-                        <div className="flex items-center gap-2 overflow-hidden"><span className="text-[9px] font-bold text-gray-300 dark:text-gray-600 uppercase w-10 flex-shrink-0">Reinf</span><div className="overflow-hidden">{getStatusBadge(task, task.statusReinf, Department.LUCRO_REINF, 'REINF')}</div></div>
+                        <div className="flex items-center gap-2 overflow-hidden"><span className="text-[9px] font-bold text-gray-300 dark:text-gray-600 uppercase w-10 flex-shrink-0">Reinf</span><div className="overflow-hidden">{getStatusBadge(task, task.statusReinf, DemandType.LUCRO_REINF, 'REINF')}</div></div>
                         <ResponsibleSelect value={task.respReinf} field="respReinf" task={task} isOpen={activeDropdown === `${task.id}-respReinf`} onToggle={() => handleToggle(`${task.id}-respReinf`)} onClose={() => setActiveDropdown(null)} disabled={!canEdit('respReinf')} />
                     </div>
                     <div className="flex flex-col gap-1 border-l-2 border-zinc-100 dark:border-zinc-800 pl-2 overflow-hidden">
-                        <div className="flex items-center gap-2 overflow-hidden"><span className="text-[9px] font-bold text-gray-300 dark:text-gray-600 uppercase w-10 flex-shrink-0">Lucro</span><div className="overflow-hidden">{getStatusBadge(task, task.statusLucro, Department.LUCRO_REINF, 'LUCRO')}</div></div>
+                        <div className="flex items-center gap-2 overflow-hidden"><span className="text-[9px] font-bold text-gray-300 dark:text-gray-600 uppercase w-10 flex-shrink-0">Lucro</span><div className="overflow-hidden">{getStatusBadge(task, task.statusLucro, DemandType.LUCRO_REINF, 'LUCRO')}</div></div>
                         <ResponsibleSelect value={task.respLucro} field="respLucro" task={task} isOpen={activeDropdown === `${task.id}-respLucro`} onToggle={() => handleToggle(`${task.id}-respLucro`)} onClose={() => setActiveDropdown(null)} disabled={!canEdit('respLucro')} />
                     </div>
                 </div>
@@ -276,11 +279,11 @@ const TableRow = memo(({ task, index, activeDropdown, onTaskSelect, onNavigate, 
             <td className={`${px} ${py}`}>
                 <div className="flex flex-col gap-3 w-full overflow-hidden">
                     <div className="flex flex-col gap-1 border-l-2 border-green-100 dark:border-green-900/30 pl-2 overflow-hidden">
-                        <div className="flex items-center gap-2 overflow-hidden"><span className="text-[9px] font-bold text-gray-300 dark:text-gray-600 uppercase w-8 flex-shrink-0">ECD</span><div className="overflow-hidden">{getStatusBadge(task, task.statusECD, Department.ECD)}</div></div>
+                        <div className="flex items-center gap-2 overflow-hidden"><span className="text-[9px] font-bold text-gray-300 dark:text-gray-600 uppercase w-8 flex-shrink-0">ECD</span><div className="overflow-hidden">{getStatusBadge(task, task.statusECD, DemandType.ECD)}</div></div>
                         <ResponsibleSelect value={task.respECD} field="respECD" task={task} isOpen={activeDropdown === `${task.id}-respECD`} onToggle={() => handleToggle(`${task.id}-respECD`)} onClose={() => setActiveDropdown(null)} disabled={!canEdit('respECD')} />
                     </div>
                     <div className="flex flex-col gap-1 border-l-2 border-purple-100 dark:border-purple-900/30 pl-2 overflow-hidden">
-                        <div className="flex items-center gap-2 overflow-hidden"><span className="text-[9px] font-bold text-gray-300 dark:text-gray-600 uppercase w-8 flex-shrink-0">ECF</span><div className="overflow-hidden">{getStatusBadge(task, task.statusECF, Department.ECF)}</div></div>
+                        <div className="flex items-center gap-2 overflow-hidden"><span className="text-[9px] font-bold text-gray-300 dark:text-gray-600 uppercase w-8 flex-shrink-0">ECF</span><div className="overflow-hidden">{getStatusBadge(task, task.statusECF, DemandType.ECF)}</div></div>
                         <ResponsibleSelect value={task.respECF} field="respECF" task={task} isOpen={activeDropdown === `${task.id}-respECF`} onToggle={() => handleToggle(`${task.id}-respECF`)} onClose={() => setActiveDropdown(null)} disabled={!canEdit('respECF')} />
                     </div>
                 </div>
@@ -610,9 +613,9 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ tasks, onNavigate, onTask
             className="overflow-auto flex-1 custom-scrollbar relative"
         >
             <table className="w-full min-w-full lg:min-w-[1200px] text-left whitespace-nowrap table-fixed border-separate border-spacing-0">
-                <thead className="bg-gray-50/95 dark:bg-zinc-900/95 backdrop-blur-sm sticky top-0 z-20 border-b border-gray-200 dark:border-zinc-700 shadow-sm">
+                <thead className="bg-gray-50/95 dark:bg-zinc-900/95 backdrop-blur-sm sticky top-0 z-20 border-b border-gray-200 dark:border-zinc-700 shadow-sm rounded-t-2xl">
                     <tr>
-                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[40px] text-center border-b border-gray-200 dark:border-zinc-700 cursor-pointer`} onClick={handleSelectAll}>
+                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[40px] text-center border-b border-gray-200 dark:border-zinc-700 cursor-pointer first:rounded-tl-2xl`} onClick={handleSelectAll}>
                             <div className="flex items-center justify-center">
                                 {selectedIds.length === tasks.length && tasks.length > 0 ? (
                                     <CheckSquare size={18} className="text-lm-yellow-dark dark:text-lm-yellow" />
@@ -631,7 +634,7 @@ const OverviewTable: React.FC<OverviewTableProps> = ({ tasks, onNavigate, onTask
                         <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[180px] border-b border-gray-200 dark:border-zinc-700`}><div>Contábil</div><div className="text-[9px] text-gray-300 dark:text-gray-600 font-normal mt-0.5 normal-case">Balancete & Balanço</div></th>
                         <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[180px] border-b border-gray-200 dark:border-zinc-700`}><div>Reinf / Lucro</div><div className="text-[9px] text-gray-300 dark:text-gray-600 font-normal mt-0.5 normal-case">Dept. Fiscal & Contábil</div></th>
                         <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider w-[180px] border-b border-gray-200 dark:border-zinc-700`}><div>ECD / ECF</div><div className="text-[9px] text-gray-300 dark:text-gray-600 font-normal mt-0.5 normal-case">Dept. Contábil</div></th>
-                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider text-right w-[180px] border-b border-gray-200 dark:border-zinc-700`}>Última Alteração</th>
+                        <th className={`${px} py-4 text-xs font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-wider text-right w-[180px] border-b border-gray-200 dark:border-zinc-700 last:rounded-tr-2xl`}>Última Alteração</th>
                     </tr>
                 </thead>
                 <tbody className="relative">

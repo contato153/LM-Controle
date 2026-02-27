@@ -12,7 +12,7 @@ import CompaniesView from './components/CompaniesView';
 import SettingsView from './components/SettingsView';
 import AuditLogView from './components/AuditLogView';
 import TaskDrawer from './components/TaskDrawer';
-import { CompanyTask, COLUMNS_FISCAL, COLUMNS_CONTABIL, COLUMNS_BALANCO, COLUMNS_ECD, COLUMNS_LUCRO_REINF, COLUMNS_REINF, Department } from './types';
+import { CompanyTask, COLUMNS_FISCAL, COLUMNS_CONTABIL, COLUMNS_BALANCO, COLUMNS_ECD, COLUMNS_LUCRO_REINF, COLUMNS_REINF, DemandType, Department } from './types';
 import { Search, RefreshCw, X, ChevronDown, Calculator, Receipt, Filter, ArrowUpDown, FileBarChart, Scale, CheckCircle2, FolderOpen, LayoutDashboard } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from './contexts/AuthContext';
@@ -94,14 +94,31 @@ const SkeletonLoader = () => (
 );
 
 const App: React.FC = () => {
-  const { currentUser } = useAuth();
-  const { tasks, isLoading, refreshData, settings, collaborators, setActiveYear } = useTasks();
+  const { currentUser, hasPermission, isEffectiveAdmin } = useAuth();
+  const { tasks, isLoading, refreshData, settings, collaborators, setActiveYear, taxRegimes } = useTasks();
   const { addNotification } = useToast();
 
   const [activeView, setActiveView] = useState('my_day'); 
-  const [currentDept, setCurrentDept] = useState<Department>(Department.FISCAL);
+  const [currentDept, setCurrentDept] = useState<DemandType>(DemandType.FISCAL);
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 1024);
   const [activeSubView, setActiveSubView] = useState<'LUCRO' | 'REINF' | 'BALANCETE' | 'BALANCO'>('BALANCETE');
+
+  // Ensure activeSubView is valid when currentDept changes to LUCRO_REINF
+  useEffect(() => {
+    if (currentDept === DemandType.LUCRO_REINF) {
+        if (!isEffectiveAdmin) {
+            const hasLucro = hasPermission(DemandType.LUCRO);
+            const hasReinf = hasPermission(DemandType.REINF);
+            
+            // Se o usuário só tem permissão para um deles, força a subview correta
+            if (hasLucro && !hasReinf && activeSubView !== 'LUCRO') {
+                setActiveSubView('LUCRO');
+            } else if (!hasLucro && hasReinf && activeSubView !== 'REINF') {
+                setActiveSubView('REINF');
+            }
+        }
+    }
+  }, [currentDept, hasPermission, isEffectiveAdmin, activeSubView]);
   const [selectedTask, setSelectedTask] = useState<CompanyTask | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -148,24 +165,23 @@ const App: React.FC = () => {
   }
 
   // --- VISIBLE DEPARTMENTS LOGIC ---
-  // Modificado: Agora "Minhas Tarefas" mostra todas as abas, assim como a Visão Geral.
-  // O filtro de tarefas (useTaskFilters) garante que o usuário só veja o que é dele dentro de cada aba.
+  // Todos podem ver todos os departamentos. As permissões restringem apenas a EDIÇÃO.
   const getVisibleDepartments = () => {
-      return [Department.TODOS, Department.FISCAL, Department.CONTABIL, Department.LUCRO_REINF, Department.ECD, Department.ECF];
+      return [DemandType.TODOS, DemandType.FISCAL, DemandType.CONTABIL, DemandType.LUCRO_REINF, DemandType.ECD, DemandType.ECF];
   };
 
   const getColumnsForDept = () => {
       switch (currentDept) {
-          case Department.FISCAL: return COLUMNS_FISCAL;
-          case Department.CONTABIL: return activeSubView === 'BALANCO' ? COLUMNS_BALANCO : COLUMNS_CONTABIL;
-          case Department.LUCRO_REINF: return activeSubView === 'REINF' ? COLUMNS_REINF : COLUMNS_LUCRO_REINF;
-          case Department.ECD: return COLUMNS_ECD;
-          case Department.ECF: return COLUMNS_ECD.map(c => c.id === 'DISPENSADA' ? {...c, id: 'NÃO SE APLICA', title: 'Não se Aplica'} : c); 
+          case DemandType.FISCAL: return COLUMNS_FISCAL;
+          case DemandType.CONTABIL: return activeSubView === 'BALANCO' ? COLUMNS_BALANCO : COLUMNS_CONTABIL;
+          case DemandType.LUCRO_REINF: return activeSubView === 'REINF' ? COLUMNS_REINF : COLUMNS_LUCRO_REINF;
+          case DemandType.ECD: return COLUMNS_ECD;
+          case DemandType.ECF: return COLUMNS_ECD.map(c => c.id === 'DISPENSADA' ? {...c, id: 'NÃO SE APLICA', title: 'Não se Aplica'} : c); 
           default: return COLUMNS_FISCAL;
       }
   };
 
-  const handleNavigateToTask = (dept: Department, subView?: 'LUCRO' | 'REINF' | 'BALANCETE' | 'BALANCO', taskId?: string) => {
+  const handleNavigateToTask = (dept: DemandType, subView?: 'LUCRO' | 'REINF' | 'BALANCETE' | 'BALANCO', taskId?: string) => {
       setCurrentDept(dept);
       if (subView) setActiveSubView(subView);
       if (taskId) { 
@@ -189,7 +205,7 @@ const App: React.FC = () => {
                 <div>
                     <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
                         {activeView === 'my_obligations' ? <FolderOpen className="text-lm-yellow" size={28} /> : <LayoutDashboard className="text-lm-yellow" size={28} />}
-                        {activeView === 'my_obligations' ? `Minhas Tarefas: ${currentDept === Department.TODOS ? 'Visão Geral' : currentDept}` : currentDept}
+                        {activeView === 'my_obligations' ? `Minhas Tarefas: ${currentDept === DemandType.TODOS ? 'Visão Geral' : currentDept}` : currentDept}
                     </h2>
                     <p className="text-gray-500 dark:text-gray-400 mt-1 ml-11">
                         {filteredTasks.length} {filteredTasks.length === 1 ? 'obrigação listada' : 'obrigações listadas'}
@@ -211,18 +227,24 @@ const App: React.FC = () => {
                         </button>
                     ))}
                 </div>
-                {currentDept === Department.CONTABIL && (
+                {currentDept === DemandType.CONTABIL && (
                     <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 p-1 rounded-xl border border-gray-200 dark:border-zinc-800 shadow-sm transition-colors animate-enter">
                          <button onClick={() => setActiveSubView('BALANCETE')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeSubView === 'BALANCETE' ? 'bg-lm-yellow/20 dark:bg-lm-yellow/10 text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800'}`}><FileBarChart size={14} /> Balancete</button>
                          <div className="w-px h-4 bg-gray-200 dark:bg-zinc-800"></div>
                          <button onClick={() => setActiveSubView('BALANCO')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeSubView === 'BALANCO' ? 'bg-lm-yellow/20 dark:bg-lm-yellow/10 text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800'}`}><Scale size={14} /> Balanço Patrimonial</button>
                     </div>
                 )}
-                {currentDept === Department.LUCRO_REINF && (
+                {currentDept === DemandType.LUCRO_REINF && (
                     <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 p-1 rounded-xl border border-gray-200 dark:border-zinc-800 shadow-sm transition-colors animate-enter">
-                        <button onClick={() => setActiveSubView('LUCRO')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeSubView === 'LUCRO' ? 'bg-lm-yellow/20 dark:bg-lm-yellow/10 text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800'}`}><Calculator size={14} /> Distribuição de Lucro</button>
-                        <div className="w-px h-4 bg-gray-200 dark:bg-zinc-800"></div>
-                        <button onClick={() => setActiveSubView('REINF')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeSubView === 'REINF' ? 'bg-lm-yellow/20 dark:bg-lm-yellow/10 text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800'}`}><Receipt size={14} /> EFD-Reinf</button>
+                        {(isEffectiveAdmin || hasPermission(DemandType.LUCRO)) && (
+                            <button onClick={() => setActiveSubView('LUCRO')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeSubView === 'LUCRO' ? 'bg-lm-yellow/20 dark:bg-lm-yellow/10 text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800'}`}><Calculator size={14} /> Distribuição de Lucro</button>
+                        )}
+                        {(isEffectiveAdmin || hasPermission(DemandType.LUCRO)) && (isEffectiveAdmin || hasPermission(DemandType.REINF)) && (
+                            <div className="w-px h-4 bg-gray-200 dark:bg-zinc-800"></div>
+                        )}
+                        {(isEffectiveAdmin || hasPermission(DemandType.REINF)) && (
+                            <button onClick={() => setActiveSubView('REINF')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activeSubView === 'REINF' ? 'bg-lm-yellow/20 dark:bg-lm-yellow/10 text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800'}`}><Receipt size={14} /> EFD-Reinf</button>
+                        )}
                     </div>
                 )}
             </div>
@@ -234,7 +256,7 @@ const App: React.FC = () => {
                 </div>
                 <div className="flex gap-2 overflow-x-auto no-scrollbar">
                      <div className="relative animate-pop-in">
-                        <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="appearance-none pl-9 pr-8 py-2.5 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg text-sm font-bold text-gray-700 dark:text-gray-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-100 dark:focus:ring-zinc-800 cursor-pointer transition-colors">
+                        <select value={sortOrder || ''} onChange={(e) => setSortOrder(e.target.value)} className="appearance-none pl-9 pr-8 py-2.5 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg text-sm font-bold text-gray-700 dark:text-gray-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-100 dark:focus:ring-zinc-800 cursor-pointer transition-colors">
                             <option value="LAST_MODIFIED_DESC">Recentes (Última Alteração)</option>
                             <option value="LAST_MODIFIED_ASC">Antigos (Última Alteração)</option>
                             <option value="ID_ASC">ID (Menor → Maior)</option>
@@ -245,26 +267,29 @@ const App: React.FC = () => {
                         <ArrowUpDown size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                     </div>
                     <div className="relative animate-pop-in">
-                        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="appearance-none pl-9 pr-8 py-2.5 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg text-sm font-bold text-gray-700 dark:text-gray-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-100 dark:focus:ring-zinc-800 cursor-pointer transition-colors">
+                        <select value={filterStatus || ''} onChange={(e) => setFilterStatus(e.target.value)} className="appearance-none pl-9 pr-8 py-2.5 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg text-sm font-bold text-gray-700 dark:text-gray-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-100 dark:focus:ring-zinc-800 cursor-pointer transition-colors">
                             <option value="">Status da Empresa</option><option value="HAS_FINISHED">Com alguma tarefa executada</option>
                         </select>
                         <CheckCircle2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                     </div>
                      <div className="relative animate-pop-in">
-                        <select value={filterRegime} onChange={(e) => setFilterRegime(e.target.value)} className="appearance-none pl-9 pr-8 py-2.5 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg text-sm font-bold text-gray-700 dark:text-gray-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-100 dark:focus:ring-zinc-800 cursor-pointer transition-colors">
-                            <option value="">Regime</option><option value="LUCRO REAL">Real</option><option value="LUCRO PRESUMIDO">Presumido</option><option value="SIMPLES NACIONAL">Simples</option><option value="IMUNE/ISENTA">Imune/Isenta</option>
+                        <select value={filterRegime || ''} onChange={(e) => setFilterRegime(e.target.value)} className="appearance-none pl-9 pr-8 py-2.5 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg text-sm font-bold text-gray-700 dark:text-gray-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-100 dark:focus:ring-zinc-800 cursor-pointer transition-colors">
+                            <option value="">Regime</option>
+                            {taxRegimes.map(r => (
+                                <option key={r.id} value={r.name}>{r.name}</option>
+                            ))}
                         </select>
                         <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                     </div>
                     <div className="relative animate-pop-in">
-                        <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} className="appearance-none pl-9 pr-8 py-2.5 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg text-sm font-bold text-gray-700 dark:text-gray-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-100 dark:focus:ring-zinc-800 cursor-pointer transition-colors">
+                        <select value={filterPriority || ''} onChange={(e) => setFilterPriority(e.target.value)} className="appearance-none pl-9 pr-8 py-2.5 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg text-sm font-bold text-gray-700 dark:text-gray-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-100 dark:focus:ring-zinc-800 cursor-pointer transition-colors">
                             <option value="">Prioridade</option><option value="ALTA">Alta</option><option value="MÉDIA">Média</option><option value="BAIXA">Baixa</option>
                         </select>
                          <div className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full border-2 border-gray-300 dark:border-gray-500"></div>
                     </div>
                     {activeView !== 'my_obligations' && (
                         <div className="relative animate-pop-in">
-                            <select value={filterResponsible} onChange={(e) => setFilterResponsible(e.target.value)} className="appearance-none pl-3 pr-8 py-2.5 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg text-sm font-bold text-gray-700 dark:text-gray-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-100 dark:focus:ring-zinc-800 cursor-pointer w-40 truncate transition-colors">
+                            <select value={filterResponsible || ''} onChange={(e) => setFilterResponsible(e.target.value)} className="appearance-none pl-3 pr-8 py-2.5 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg text-sm font-bold text-gray-700 dark:text-gray-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-100 dark:focus:ring-zinc-800 cursor-pointer w-40 truncate transition-colors">
                                 <option value="">Todos</option><option value="HAS_RESPONSIBLE" className="text-green-600 font-bold">● Com Resp</option><option value="NO_RESPONSIBLE" className="text-red-500 font-bold">○ Sem Resp</option><hr />
                                 {collaborators.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                             </select>
@@ -280,7 +305,7 @@ const App: React.FC = () => {
       </div>
 
       <div className="flex-1 overflow-x-auto overflow-y-hidden p-2 lg:p-6 pt-2 max-w-7xl mx-auto w-full">
-            {currentDept === Department.TODOS ? (
+            {currentDept === DemandType.TODOS ? (
                 <OverviewTable 
                     tasks={filteredTasks} 
                     onNavigate={handleNavigateToTask}
@@ -293,11 +318,11 @@ const App: React.FC = () => {
                     let statusField: keyof CompanyTask = 'statusFiscal';
                     let responsibleField: keyof CompanyTask = 'respFiscal';
                     switch (currentDept) {
-                        case Department.FISCAL: statusField = 'statusFiscal'; responsibleField = 'respFiscal'; break;
-                        case Department.CONTABIL: statusField = activeSubView === 'BALANCO' ? 'statusBalanco' : 'statusContabil'; responsibleField = activeSubView === 'BALANCO' ? 'respBalanco' : 'respContabil'; break;
-                        case Department.LUCRO_REINF: statusField = activeSubView === 'REINF' ? 'statusReinf' : 'statusLucro'; responsibleField = activeSubView === 'REINF' ? 'respReinf' : 'respLucro'; break;
-                        case Department.ECD: statusField = 'statusECD'; responsibleField = 'respECD'; break;
-                        case Department.ECF: statusField = 'statusECF'; responsibleField = 'respECF'; break;
+                        case DemandType.FISCAL: statusField = 'statusFiscal'; responsibleField = 'respFiscal'; break;
+                        case DemandType.CONTABIL: statusField = activeSubView === 'BALANCO' ? 'statusBalanco' : 'statusContabil'; responsibleField = activeSubView === 'BALANCO' ? 'respBalanco' : 'respContabil'; break;
+                        case DemandType.LUCRO_REINF: statusField = activeSubView === 'REINF' ? 'statusReinf' : 'statusLucro'; responsibleField = activeSubView === 'REINF' ? 'respReinf' : 'respLucro'; break;
+                        case DemandType.ECD: statusField = 'statusECD'; responsibleField = 'respECD'; break;
+                        case DemandType.ECF: statusField = 'statusECF'; responsibleField = 'respECF'; break;
                     }
                     const colTasks = filteredTasks.filter(t => t[statusField] === col.id);
                     return (
@@ -342,7 +367,7 @@ const App: React.FC = () => {
         toggleSidebar={() => setSidebarOpen(!sidebarOpen)} 
         activeView={activeView} 
         setActiveView={setActiveView} 
-        onNavigate={(taskId) => handleNavigateToTask(Department.TODOS, undefined, taskId)}
+        onNavigate={(taskId) => handleNavigateToTask(DemandType.TODOS, undefined, taskId)}
         clearFilters={clearFilters}
       />
       <main className={`flex-1 flex flex-col h-full relative shadow-2xl rounded-l-[30px] overflow-hidden bg-white dark:bg-black ml-[-20px] z-0 transition-colors border-l border-gray-200 dark:border-zinc-900 ${settings.reduceMotion ? '' : 'duration-500'}`}>
@@ -356,7 +381,7 @@ const App: React.FC = () => {
                     transition={{ duration: 0.2, ease: "easeOut" }}
                     className="w-full h-full"
                 >
-                    {activeView === 'my_day' && <MyDay onNavigate={(taskId) => handleNavigateToTask(Department.TODOS, undefined, taskId)} />}
+                    {activeView === 'my_day' && <MyDay onNavigate={(taskId) => handleNavigateToTask(DemandType.TODOS, undefined, taskId)} />}
                     {(activeView === 'kanban' || activeView === 'my_obligations') && renderKanbanView()}
                     {activeView === 'reports' && <ReportsDashboard />}
                     {activeView === 'team' && <TeamView />}

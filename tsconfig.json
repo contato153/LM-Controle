@@ -10,11 +10,10 @@
       "DOM.Iterable"
     ],
     "skipLibCheck": true,
-    // "types" is omitted intentionally so the compiler includes whatever
-    // definition packages are installed under node_modules/@types.  If you
-    // see complaints about missing libraries (e.g. "node" or "vite/client")
-    // simply run `npm install` to populate devDependencies or add the
-    // appropriate `@types/...` package.
+    "types": [
+      "node",
+      "vite/client"
+    ],
     "moduleResolution": "bundler",
     "isolatedModules": true,
     "moduleDetection": "force",

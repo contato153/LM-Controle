@@ -1,32 +1,19 @@
 
 import React from 'react';
-import { Settings, Shield, Monitor, Zap, Layout, Clock, MousePointer2, Bell, Database, Loader2, MessageSquare, CheckSquare, Activity, Calendar, Trash2, Eye, EyeOff } from 'lucide-react';
-import { APP_INFO, USE_SUPABASE } from '../config/app';
-import { Department, CompanyTask } from '../types';
+import { Settings, Shield, Monitor, Zap, Layout, Clock, MousePointer2, Bell, Database, Loader2, MessageSquare, CheckSquare, Activity, Calendar, Trash2, Eye, EyeOff, Plus } from 'lucide-react';
+import { APP_INFO } from '../config/app';
+import { DemandType, CompanyTask } from '../types';
 import { useTasks } from '../contexts/TasksContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { migrateFromSheetsToSupabase, MigrationOptions } from '@/services';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const SettingsView: React.FC = () => {
-  const { settings, updateSetting, startNewCycle, activeYear, deleteYearCycle, availableYears, verifySecurityPassword } = useTasks();
+  const { settings, updateSetting, startNewCycle, activeYear, deleteYearCycle, availableYears, verifySecurityPassword, taxRegimes, addTaxRegime, removeTaxRegime } = useTasks();
   const { isAdmin, adminMode, setAdminMode, isEffectiveAdmin } = useAuth();
   const { addNotification } = useToast();
-  const [isMigrating, setIsMigrating] = useState(false);
-  const [migrationStatus, setMigrationStatus] = useState('');
-  const [migrationOptions, setMigrationOptions] = useState<MigrationOptions>({
-    tasks: true,
-    collaborators: true,
-    comments: true,
-    logs: true,
-    details: true,
-    notifications: true,
-    userConfig: true
-  });
 
-  const [showConfirm, setShowConfirm] = React.useState(false);
   const [showCycleConfirm, setShowCycleConfirm] = useState(false);
   const [targetYear, setTargetYear] = useState((new Date().getFullYear() + 1).toString());
   const [isStartingCycle, setIsStartingCycle] = useState(false);
@@ -59,22 +46,6 @@ const SettingsView: React.FC = () => {
         </button>
     </div>
   );
-
-  const handleMigration = async () => {
-    setShowConfirm(false);
-    setIsMigrating(true);
-    setMigrationStatus('Iniciando...');
-    
-    try {
-        await migrateFromSheetsToSupabase((msg) => setMigrationStatus(msg), migrationOptions);
-        addNotification('Sucesso', 'Migração concluída com sucesso!', 'success');
-    } catch (e) {
-        addNotification('Erro', 'Erro na migração. Verifique o console.', 'error');
-    } finally {
-        setIsMigrating(false);
-        setMigrationStatus('');
-    }
-  };
 
   return (
     <div className="w-full h-full overflow-y-auto bg-transparent transition-colors duration-300">
@@ -138,9 +109,9 @@ const SettingsView: React.FC = () => {
                 )}
 
                 <div className="py-4 border-t border-gray-100 dark:border-zinc-800 space-y-4">
-                     <div className="flex items-start gap-3 mb-3"><div className="p-2 rounded-lg bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-gray-400"><Layout size={18} /></div><div><p className="text-sm font-bold text-gray-900 dark:text-white">Departamento Padrão</p><p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Selecione qual visão abrir ao iniciar o sistema.</p></div></div>
+                     <div className="flex items-start gap-3 mb-3"><div className="p-2 rounded-lg bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-gray-400"><Layout size={18} /></div><div><p className="text-sm font-bold text-gray-900 dark:text-white">Demanda Padrão</p><p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Selecione qual visão abrir ao iniciar o sistema.</p></div></div>
                     <select value={settings.defaultDepartment} onChange={(e) => updateSetting('defaultDepartment', e.target.value)} className="w-full p-2.5 bg-gray-50 dark:bg-black border border-gray-200 dark:border-zinc-700 rounded-lg text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-lm-yellow/50 outline-none">
-                        {Object.values(Department).map(dept => (<option key={dept} value={dept}>{dept}</option>))}
+                        {Object.values(DemandType).map(dept => (<option key={dept} value={dept}>{dept}</option>))}
                     </select>
 
                     <div className="flex items-start gap-3 mb-3"><div className="p-2 rounded-lg bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-gray-400"><Calendar size={18} /></div><div><p className="text-sm font-bold text-gray-900 dark:text-white">Ano Padrão</p><p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Ano selecionado ao entrar.</p></div></div>
@@ -175,7 +146,7 @@ const SettingsView: React.FC = () => {
                     </div>
                 )}
 
-                {isAdmin && adminMode && USE_SUPABASE && (
+                {isAdmin && adminMode && (
                     <div className="mb-6 pb-6 border-b border-gray-100 dark:border-zinc-800">
                         <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3">Ciclo de Vigência (Anual)</h4>
                         <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg border border-yellow-100 dark:border-yellow-900/50">
@@ -383,96 +354,7 @@ const SettingsView: React.FC = () => {
 
                 <div className="space-y-4">
                     <div className="flex items-center justify-between py-2 border-b border-gray-50 dark:border-zinc-800"><span className="text-sm text-gray-600 dark:text-gray-400">Versão</span><span className="text-sm font-mono font-bold text-gray-900 dark:text-white">{APP_INFO.version}</span></div>
-                    <div className="flex items-center justify-between py-2 border-b border-gray-50 dark:border-zinc-800"><span className="text-sm text-gray-600 dark:text-gray-400">Backend</span><span className={`text-sm font-bold ${USE_SUPABASE ? 'text-green-600' : 'text-blue-600'}`}>{USE_SUPABASE ? 'Supabase (SQL)' : 'Google Sheets'}</span></div>
                 </div>
-                
-                {isAdmin && !USE_SUPABASE && (
-                    <div className="mt-6 pt-6 border-t border-gray-100 dark:border-zinc-800">
-                        <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3">Administração de Dados</h4>
-                        <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-900/50 mb-4">
-                            <p className="text-xs text-blue-800 dark:text-blue-200 mb-2">
-                                <strong>Migração para Supabase:</strong> Esta ferramenta copiará todos os dados da planilha atual para o banco de dados Supabase configurado.
-                            </p>
-                            
-                            {!showConfirm && !isMigrating && (
-                                <div className="space-y-4">
-                                    <div className="grid grid-cols-2 gap-2 mb-4">
-                                        <label className="flex items-center gap-2 p-2 rounded border border-blue-100 dark:border-blue-900/30 bg-white/50 dark:bg-black/20 cursor-pointer hover:bg-blue-100/50 transition-colors">
-                                            <input type="checkbox" checked={migrationOptions.tasks} onChange={e => setMigrationOptions({...migrationOptions, tasks: e.target.checked})} className="rounded text-blue-600 focus:ring-blue-500" />
-                                            <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Empresas</span>
-                                        </label>
-                                        <label className="flex items-center gap-2 p-2 rounded border border-blue-100 dark:border-blue-900/30 bg-white/50 dark:bg-black/20 cursor-pointer hover:bg-blue-100/50 transition-colors">
-                                            <input type="checkbox" checked={migrationOptions.collaborators} onChange={e => setMigrationOptions({...migrationOptions, collaborators: e.target.checked})} className="rounded text-blue-600 focus:ring-blue-500" />
-                                            <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Colaboradores</span>
-                                        </label>
-                                        <label className="flex items-center gap-2 p-2 rounded border border-blue-100 dark:border-blue-900/30 bg-white/50 dark:bg-black/20 cursor-pointer hover:bg-blue-100/50 transition-colors">
-                                            <input type="checkbox" checked={migrationOptions.comments} onChange={e => setMigrationOptions({...migrationOptions, comments: e.target.checked})} className="rounded text-blue-600 focus:ring-blue-500" />
-                                            <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Comentários</span>
-                                        </label>
-                                        <label className="flex items-center gap-2 p-2 rounded border border-blue-100 dark:border-blue-900/30 bg-white/50 dark:bg-black/20 cursor-pointer hover:bg-blue-100/50 transition-colors">
-                                            <input type="checkbox" checked={migrationOptions.logs} onChange={e => setMigrationOptions({...migrationOptions, logs: e.target.checked})} className="rounded text-blue-600 focus:ring-blue-500" />
-                                            <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Logs/Registros</span>
-                                        </label>
-                                        <label className="flex items-center gap-2 p-2 rounded border border-blue-100 dark:border-blue-900/30 bg-white/50 dark:bg-black/20 cursor-pointer hover:bg-blue-100/50 transition-colors">
-                                            <input type="checkbox" checked={migrationOptions.details} onChange={e => setMigrationOptions({...migrationOptions, details: e.target.checked})} className="rounded text-blue-600 focus:ring-blue-500" />
-                                            <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Checklists</span>
-                                        </label>
-                                        <label className="flex items-center gap-2 p-2 rounded border border-blue-100 dark:border-blue-900/30 bg-white/50 dark:bg-black/20 cursor-pointer hover:bg-blue-100/50 transition-colors">
-                                            <input type="checkbox" checked={migrationOptions.notifications} onChange={e => setMigrationOptions({...migrationOptions, notifications: e.target.checked})} className="rounded text-blue-600 focus:ring-blue-500" />
-                                            <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Notificações</span>
-                                        </label>
-                                        <label className="flex items-center gap-2 p-2 rounded border border-blue-100 dark:border-blue-900/30 bg-white/50 dark:bg-black/20 cursor-pointer hover:bg-blue-100/50 transition-colors">
-                                            <input type="checkbox" checked={migrationOptions.userConfig} onChange={e => setMigrationOptions({...migrationOptions, userConfig: e.target.checked})} className="rounded text-blue-600 focus:ring-blue-500" />
-                                            <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Preferências</span>
-                                        </label>
-                                    </div>
-
-                                    <button 
-                                        onClick={() => setShowConfirm(true)}
-                                        className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2"
-                                    >
-                                        <Database size={16} />
-                                        Migrar Dados Selecionados
-                                    </button>
-                                </div>
-                            )}
-
-                            {showConfirm && (
-                                <div className="space-y-3 animate-enter">
-                                    <p className="text-xs font-bold text-red-600 dark:text-red-400">
-                                        ATENÇÃO: Isso copiará todos os dados da planilha para o Supabase. Continuar?
-                                    </p>
-                                    <div className="flex gap-2">
-                                        <button 
-                                            onClick={handleMigration}
-                                            className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-colors"
-                                        >
-                                            Sim, Iniciar Migração
-                                        </button>
-                                        <button 
-                                            onClick={() => setShowConfirm(false)}
-                                            className="flex-1 py-2 bg-gray-200 dark:bg-zinc-700 text-gray-800 dark:text-white rounded-lg text-xs font-bold transition-colors"
-                                        >
-                                            Cancelar
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-
-                            {isMigrating && (
-                                <div className="space-y-2">
-                                    <div className="w-full py-2 bg-blue-600/50 text-white rounded-lg text-sm font-bold flex items-center justify-center gap-2 cursor-wait">
-                                        <Loader2 size={16} className="animate-spin" />
-                                        Migrando...
-                                    </div>
-                                    {migrationStatus && (
-                                        <p className="text-xs font-mono text-center text-blue-700 dark:text-blue-300">{migrationStatus}</p>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
             </div>
         </div>
       </div>

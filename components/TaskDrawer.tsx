@@ -4,8 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import EmojiPicker, { EmojiClickData, Theme as EmojiTheme } from 'emoji-picker-react';
 import { X, CheckSquare, Plus, Trash2, Save, Loader2, AlignLeft, History, CalendarClock, User, MessageSquare, Send, Calendar, MoreVertical, Edit2, Check, Image as ImageIcon, Eye, EyeOff, Paperclip, ChevronDown, Smile, CornerDownRight, AlertTriangle } from 'lucide-react';
-import { CompanyTask, TaskDetail, ChecklistItem, TaskComment, getEffectivePriority, Collaborator, isFiscalFinished } from '../types';
-import { saveTaskDetail, fetchTaskDetail, fetchLogs, fetchComments, saveComment, updateComment, deleteComment, sendNotification } from '../services/sheetService';
+import { CompanyTask, TaskDetail, ChecklistItem, TaskComment, getEffectivePriority, Collaborator, isFiscalFinished, DemandType } from '../types';
 import { 
     fetchTaskDetailSupabase, 
     saveTaskDetailSupabase, 
@@ -20,7 +19,6 @@ import {
     toggleCommentReactionSupabase
 } from '../services/supabaseService';
 import { supabase } from '../services/supabaseClient';
-import { USE_SUPABASE } from '../config/app';
 import { useAuth } from '../contexts/AuthContext';
 import { useTasks } from '../contexts/TasksContext';
 
@@ -232,11 +230,20 @@ const formatLogDescription = (description: string) => {
 };
 
 const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose, onNotify }) => {
-  const { currentUser, isAdmin, isEffectiveAdmin } = useAuth();
+  const { currentUser, isAdmin, isEffectiveAdmin, hasPermission } = useAuth();
   const { updateTask, collaborators, tasks, activeYear } = useTasks();
   
   // Use a versão mais recente da tarefa do contexto, se disponível
   const task = tasks.find(t => t.id === propTask.id) || propTask;
+
+  const canEditGlobal = isEffectiveAdmin || 
+      hasPermission(DemandType.FISCAL) || 
+      hasPermission(DemandType.CONTABIL) || 
+      hasPermission(DemandType.LUCRO) || 
+      hasPermission(DemandType.REINF) || 
+      hasPermission(DemandType.ECD) || 
+      hasPermission(DemandType.ECF) ||
+      hasPermission(DemandType.TODOS);
   
   const [activeTab, setActiveTab] = useState<'details' | 'comments' | 'history'>('comments');
   
@@ -286,7 +293,7 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
   // --- MENTION SYSTEM STATE ---
   const [mentionQuery, setMentionQuery] = useState('');
   const [isMentionOpen, setIsMentionOpen] = useState(false);
-  const [mentionTarget, setMentionTarget] = useState<'comment' | 'description' | null>(null);
+  const [mentionTarget, setMentionTarget] = useState<'comment' | 'description' | 'edit' | null>(null);
   const [mentionCursorIndex, setMentionCursorIndex] = useState(0);
   
   // Refs para inputs para posicionar o menu
@@ -319,7 +326,7 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
   const handleReaction = async (commentId: string, emoji: string) => {
       if (!currentUser) return;
       try {
-          if (USE_SUPABASE && supabase) {
+          if (supabase) {
               await toggleCommentReactionSupabase(commentId, emoji, currentUser.name);
               await loadComments(true);
           }
@@ -363,7 +370,14 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
 
                     {isEditing ? (
                         <div className="flex flex-col gap-2 w-full bg-white dark:bg-zinc-800 p-2 rounded-xl border border-lm-yellow shadow-lg z-10">
-                            <textarea value={editingText} onChange={(e) => setEditingText(e.target.value)} className="w-full p-2 text-sm bg-transparent outline-none resize-none text-gray-900 dark:text-white" rows={3} autoFocus />
+                            <textarea 
+                                value={editingText} 
+                                onChange={(e) => setEditingText(e.target.value)} 
+                                onKeyUp={(e) => handleInputKeyUp(e, 'edit')}
+                                className="w-full p-2 text-sm bg-transparent outline-none resize-none text-gray-900 dark:text-white" 
+                                rows={3} 
+                                autoFocus 
+                            />
                             <div className="flex gap-2 justify-end">
                                 <button onClick={() => setEditingCommentId(null)} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1">Cancelar</button>
                                 <button onClick={() => saveEditComment(msg)} className="text-xs bg-lm-yellow text-gray-900 px-3 py-1 rounded-md font-bold">Salvar</button>
@@ -444,19 +458,25 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
       return collaborators.filter(c => c.name.toLowerCase().includes(mentionQuery.toLowerCase()));
   }, [collaborators, mentionQuery]);
 
-  const handleInputKeyUp = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>, target: 'comment' | 'description') => {
+  const handleInputKeyUp = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>, target: 'comment' | 'description' | 'edit') => {
       const { value, selectionStart } = e.currentTarget;
       
       const lastAt = value.lastIndexOf('@', selectionStart || 0);
       
       if (lastAt !== -1) {
           const textAfterAt = value.substring(lastAt + 1, selectionStart || 0);
+          // Allow spaces but only if it matches at least one collaborator
           if (!textAfterAt.includes('\n')) {
-              setMentionQuery(textAfterAt);
-              setIsMentionOpen(true);
-              setMentionTarget(target);
-              setMentionCursorIndex(lastAt);
-              return;
+              // Check if the current query matches any collaborator
+              const matches = collaborators.some(c => c.name.toLowerCase().includes(textAfterAt.toLowerCase()));
+              
+              if (matches || textAfterAt === '') {
+                  setMentionQuery(textAfterAt);
+                  setIsMentionOpen(true);
+                  setMentionTarget(target);
+                  setMentionCursorIndex(lastAt);
+                  return;
+              }
           }
       }
       setIsMentionOpen(false);
@@ -491,6 +511,13 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
                 descInputRef.current.setSelectionRange(newCursorPos, newCursorPos);
             }
           }, 0);
+      } else if (mentionTarget === 'edit') {
+          const before = editingText.substring(0, mentionCursorIndex);
+          const after = editingText.substring(mentionCursorIndex + 1 + mentionQuery.length);
+          const newValue = before + '@' + nameToInsert + after;
+          
+          setEditingText(newValue);
+          // We don't have a ref for the dynamic edit textarea easily available, but it's autoFocus
       }
       
       setIsMentionOpen(false);
@@ -650,7 +677,7 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
 
   // --- SUPABASE REALTIME ---
   useEffect(() => {
-      if (!isOpen || !USE_SUPABASE || !supabase) return;
+      if (!isOpen || !supabase) return;
 
       const channel = supabase
           .channel(`task-${task.id}`)
@@ -687,10 +714,8 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
   const loadDetails = async () => {
     setIsLoadingDetails(true);
     let details;
-    if (USE_SUPABASE && supabase) {
+    if (supabase) {
         details = await fetchTaskDetailSupabase(task.id, activeYear);
-    } else {
-        details = await fetchTaskDetail(task.id);
     }
     
     if (details) {
@@ -707,7 +732,7 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
   const loadHistory = async () => {
       setIsLoadingHistory(true);
       
-      if (USE_SUPABASE && supabase) {
+      if (supabase) {
           const { logs: data, hasMore } = await fetchLogsPaginatedSupabase(task.id, 0, 20, activeYear);
           const formattedLogs = data.map(row => ({
               timestamp: row[0],
@@ -717,18 +742,6 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
           setHistoryLogs(formattedLogs);
           setHasMoreHistory(hasMore);
           setHistoryPage(0);
-      } else {
-          const allLogs = await fetchLogs();
-          const filteredLogs = allLogs
-              .filter(row => row[3] === task.id)
-              .map(row => ({
-                  timestamp: row[0],
-                  description: row[1],
-                  user: row[2]
-              }))
-              .reverse();
-          setHistoryLogs(filteredLogs);
-          setHasMoreHistory(false);
       }
       
       setIsLoadingHistory(false);
@@ -761,15 +774,11 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
   const loadComments = async (silent = false) => {
       if (!silent) setIsLoadingComments(true);
       
-      if (USE_SUPABASE && supabase) {
+      if (supabase) {
           const { comments: data, hasMore } = await fetchCommentsPaginatedSupabase(task.id, 0, 20, activeYear);
           setComments(data);
           setHasMoreComments(hasMore);
           setCommentsPage(0);
-      } else {
-          const data = await fetchComments(task.id);
-          setComments(data);
-          setHasMoreComments(false);
       }
       
       if (!silent) setIsLoadingComments(false);
@@ -816,10 +825,8 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
                   timestamp: timestamp
               };
               
-              if (USE_SUPABASE && supabase) {
+              if (supabase) {
                   return sendNotificationSupabase(notif);
-              } else {
-                  return sendNotification(notif);
               }
           });
           await Promise.all(promises);
@@ -836,10 +843,8 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
           checklist: newChecklist !== undefined ? newChecklist : checklist
       };
       
-      if (USE_SUPABASE && supabase) {
+      if (supabase) {
           await saveTaskDetailSupabase(detail, activeYear);
-      } else {
-          await saveTaskDetail(detail);
       }
 
       if (newDesc !== undefined && newDesc !== descriptionRef.current) {
@@ -855,10 +860,8 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
 
       setIsSendingComment(true);
       try {
-          if (USE_SUPABASE && supabase) {
+          if (supabase) {
               await saveCommentSupabase(task.id, currentUser.name, newComment, replyingTo?.id, activeYear);
-          } else {
-              await saveComment(task.id, currentUser.name, newComment);
           }
           await checkAndSendMentions(newComment, 'comment');
           setNewComment('');
@@ -873,10 +876,8 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
   const handleDeleteComment = async (comment: TaskComment) => {
       setActiveMenuId(null);
       try {
-          if (USE_SUPABASE && supabase) {
+          if (supabase) {
               await deleteCommentSupabase(comment.id);
-          } else if (comment.rowIndex) {
-              await deleteComment(comment.rowIndex);
           }
           await loadComments(true); 
           onNotify('Sucesso', 'Comentário removido.');
@@ -896,10 +897,8 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
       if (!editingText.trim()) return;
       try {
           const finalText = editingText.trim() + ' (editado)';
-          if (USE_SUPABASE && supabase) {
+          if (supabase) {
               await updateCommentSupabase(comment.id, finalText);
-          } else if (comment.rowIndex) {
-              await updateComment(comment.rowIndex, finalText);
           }
           await checkAndSendMentions(finalText, 'comment');
           await loadComments(true);
@@ -1021,8 +1020,8 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
                                         : effectivePriority === 'MÉDIA' 
                                         ? 'bg-orange-50 text-orange-600 border-orange-100 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-900/50'
                                         : 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-zinc-800 dark:text-gray-400 dark:border-zinc-700'
-                                }`}
-                                disabled={!isEffectiveAdmin}
+                                } ${!canEditGlobal ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                disabled={!canEditGlobal}
                             >
                                 <option value="">Auto</option>
                                 <option value="BAIXA">Baixa</option>
@@ -1042,7 +1041,8 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
                                 value={toIsoDate(task.dueDate)}
                                 onChange={handleDueDateChange}
                                 onKeyDown={(e) => e.preventDefault()}
-                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 date-input-full"
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 date-input-full disabled:cursor-not-allowed"
+                                disabled={!canEditGlobal}
                             />
                         </div>
                     </div>
@@ -1309,7 +1309,8 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
                                             onPaste={(e) => handlePaste(e, 'description')}
                                             onBlur={handleDescriptionBlur}
                                             placeholder="Use @Nome para mencionar. Cole prints (Ctrl+V) ou anexe imagens."
-                                            className="w-full min-h-[150px] p-4 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-lm-yellow/50 focus:border-lm-yellow resize-y transition-shadow placeholder-gray-400 shadow-sm"
+                                            className="w-full min-h-[150px] p-4 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-lm-yellow/50 focus:border-lm-yellow resize-y transition-shadow placeholder-gray-400 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                            disabled={!canEditGlobal}
                                         />
                                     </div>
                                 )}
@@ -1326,18 +1327,20 @@ const TaskDrawer: React.FC<TaskDrawerProps> = ({ task: propTask, isOpen, onClose
                                 <div className="space-y-2">
                                     {checklist.map((item, idx) => (
                                         <div key={item.id} className="group flex items-start gap-3 p-3 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-xl hover:shadow-sm transition-all animate-enter" style={{ animationDelay: `${idx * 50}ms` }}>
-                                            <button onClick={() => toggleCheckitem(item.id)} className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center transition-colors ${item.isDone ? 'bg-lm-yellow border-lm-yellow text-gray-900' : 'bg-transparent dark:bg-black border-gray-300 dark:border-zinc-600 hover:border-lm-yellow'}`}>{item.isDone && <CheckSquare size={12} />}</button>
+                                            <button onClick={() => toggleCheckitem(item.id)} disabled={!canEditGlobal} className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center transition-colors ${item.isDone ? 'bg-lm-yellow border-lm-yellow text-gray-900' : 'bg-transparent dark:bg-black border-gray-300 dark:border-zinc-600 hover:border-lm-yellow'} ${!canEditGlobal ? 'opacity-50 cursor-not-allowed' : ''}`}>{item.isDone && <CheckSquare size={12} />}</button>
                                             <span className={`flex-1 text-sm break-words ${item.isDone ? 'text-gray-400 line-through' : 'text-gray-700 dark:text-gray-200'}`}>{item.text}</span>
-                                            <button onClick={() => deleteCheckitem(item.id)} className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-all"><Trash2 size={14} /></button>
+                                            {canEditGlobal && <button onClick={() => deleteCheckitem(item.id)} className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-all"><Trash2 size={14} /></button>}
                                         </div>
                                     ))}
                                 </div>
+                                {canEditGlobal && (
                                 <form onSubmit={addChecklistItem} className="flex items-center gap-2 mt-2">
                                     <div className="relative flex-1">
                                         <Plus size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                                         <input type="text" value={newItemText} onChange={(e) => setNewItemText(e.target.value)} placeholder="Adicionar novo item..." className="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-lm-yellow/30 shadow-sm" />
                                     </div>
                                 </form>
+                                )}
                             </div>
                         </div>
                     )}

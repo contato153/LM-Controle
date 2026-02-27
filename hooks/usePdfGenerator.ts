@@ -34,10 +34,9 @@ interface PdfGeneratorConfig {
     filterStatus: string;
     filterRegime: string;
     filterResponsible: string;
-    selectedColumnIds?: string[]; // Optional, defaults to a set if not provided
     includeCharts?: boolean;
     includeTable?: boolean;
-    orientation?: 'portrait' | 'landscape';
+    orientation?: 'landscape';
 }
 
 export const usePdfGenerator = () => {
@@ -50,7 +49,7 @@ export const usePdfGenerator = () => {
         await new Promise(resolve => setTimeout(resolve, 500));
 
         try {
-            const doc = new jsPDF({ orientation: config.orientation || 'landscape', unit: 'mm', format: 'a4' });
+            const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
             const totalPagesExp = '{total_pages_count_string}';
             
             const pageWidth = doc.internal.pageSize.getWidth();
@@ -61,12 +60,25 @@ export const usePdfGenerator = () => {
             // Cores da Marca
             const colorYellow: [number, number, number] = [255, 214, 0]; // #FFD600
             const colorDark: [number, number, number] = [17, 24, 39];    // #111827
-            // const colorGray: [number, number, number] = [243, 244, 246]; // #F3F4F6
 
             // --- HEADER ---
             // Barra Lateral Amarela
             doc.setFillColor(colorYellow[0], colorYellow[1], colorYellow[2]);
             doc.rect(0, 0, 8, pageHeight, 'F');
+
+            // Logo
+            try {
+                // Try loading from root first, then fallback if needed
+                const logoImg = await loadImage('/lem-preto.png').catch(() => loadImage('lem-preto.png'));
+                const logoWidth = 25;
+                const imgProps = doc.getImageProperties(logoImg);
+                const ratio = imgProps.width / imgProps.height;
+                const logoHeight = logoWidth / ratio;
+                
+                doc.addImage(logoImg, 'PNG', pageWidth - margin - logoWidth, 15, logoWidth, logoHeight);
+            } catch (e) {
+                console.warn("Logo not found", e);
+            }
 
             // Título e Subtítulo
             doc.setFont("helvetica", "bold");
@@ -146,14 +158,76 @@ export const usePdfGenerator = () => {
             doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.text("ESTIMATIVA DE CONCLUSÃO", margin + (cardWidth * 2) + (gap * 2) + 5, startY + 6);
             doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.text(`${progress}% Concluído`, margin + (cardWidth * 2) + (gap * 2) + 5, startY + 14);
 
+            // --- GRÁFICOS ---
+            if (config.includeCharts) {
+                startY += 35;
+                
+                doc.setFontSize(10);
+                doc.setFont("helvetica", "bold");
+                doc.setTextColor(50, 50, 50);
+                doc.text("ANÁLISE GRÁFICA", margin, startY - 5);
+
+                const chartHeight = 40;
+                const chartWidth = (contentWidth / 2) - 5;
+                
+                // Chart 1: Status (Bar Chart)
+                const statusData = [
+                    { label: 'Concluído', value: doneCount, color: [34, 197, 94] }, // Green
+                    { label: 'Pendente', value: totalItems - doneCount, color: [239, 68, 68] } // Red
+                ];
+                
+                drawBarChart(doc, margin, startY, chartWidth, chartHeight, statusData, "Status Geral");
+
+                // Chart 2: Prioridade (Bar Chart)
+                const pHigh = filteredTasks.filter(t => t.prioridade === 'ALTA').length;
+                const pMed = filteredTasks.filter(t => t.prioridade === 'MÉDIA').length;
+                const pLow = filteredTasks.filter(t => t.prioridade === 'BAIXA' || !t.prioridade).length;
+                
+                const priorityData = [
+                    { label: 'Alta', value: pHigh, color: [239, 68, 68] }, // Red
+                    { label: 'Média', value: pMed, color: [249, 115, 22] }, // Orange
+                    { label: 'Baixa', value: pLow, color: [34, 197, 94] } // Green
+                ];
+
+                drawBarChart(doc, margin + chartWidth + 10, startY, chartWidth, chartHeight, priorityData, "Distribuição por Prioridade");
+
+                startY += chartHeight + 10;
+            }
+
             // --- TABELA DE DADOS ---
             if (config.includeTable !== false) {
-                startY += 30;
+                startY += 15;
 
-                // Ordenar colunas baseado na seleção
-                const cols = config.selectedColumnIds 
-                    ? AVAILABLE_COLUMNS.filter(col => config.selectedColumnIds!.includes(col.id))
-                    : AVAILABLE_COLUMNS.filter(col => ['id', 'name', 'regime', 'statusFiscal', 'statusContabil', 'respFiscal'].includes(col.id)); // Default columns
+                // Definir colunas baseado no contexto (Filtro)
+                let columnsToShow: string[] = ['id', 'name', 'cnpj', 'regime', 'prioridade'];
+
+                switch (config.filterContext) {
+                    case 'FISCAL':
+                        columnsToShow = [...columnsToShow, 'respFiscal', 'statusFiscal', 'dueDate'];
+                        break;
+                    case 'CONTABIL':
+                        columnsToShow = [...columnsToShow, 'respContabil', 'statusContabil', 'dueDate'];
+                        break;
+                    case 'REINF':
+                        columnsToShow = [...columnsToShow, 'respReinf', 'statusReinf', 'dueDate'];
+                        break;
+                    case 'LUCRO':
+                        columnsToShow = [...columnsToShow, 'respLucro', 'statusLucro', 'dueDate'];
+                        break;
+                    case 'ECD':
+                        columnsToShow = [...columnsToShow, 'respECD', 'statusECD', 'dueDate'];
+                        break;
+                    case 'ECF':
+                        columnsToShow = [...columnsToShow, 'respECF', 'statusECF', 'dueDate'];
+                        break;
+                    case 'ALL':
+                    default:
+                        // Visão Geral Completa - Incluir todos os status
+                        columnsToShow = ['id', 'name', 'regime', 'prioridade', 'statusFiscal', 'statusContabil', 'statusReinf', 'statusLucro', 'statusECD', 'statusECF'];
+                        break;
+                }
+
+                const cols = AVAILABLE_COLUMNS.filter(col => columnsToShow.includes(col.id));
                 
                 const head = [cols.map(c => c.label)];
 
@@ -226,4 +300,58 @@ export const usePdfGenerator = () => {
     };
 
     return { generatePDF, isGenerating };
+};
+
+function drawBarChart(doc: any, x: number, y: number, w: number, h: number, data: any[], title: string) {
+    // Title
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(80, 80, 80);
+    doc.text(title, x + 2, y - 2);
+
+    // Background
+    doc.setFillColor(250, 250, 250);
+    doc.roundedRect(x, y, w, h, 2, 2, 'F');
+
+    if (data.length === 0) return;
+
+    const maxVal = Math.max(...data.map(d => d.value));
+    const barWidth = (w - 20) / data.length;
+    const maxBarHeight = h - 20;
+
+    data.forEach((d, i) => {
+        const barHeight = maxVal > 0 ? (d.value / maxVal) * maxBarHeight : 0;
+        const bx = x + 10 + (i * barWidth) + (barWidth * 0.1);
+        const by = y + h - 10 - barHeight;
+        const bw = barWidth * 0.8;
+
+        // Bar
+        doc.setFillColor(d.color[0], d.color[1], d.color[2]);
+        doc.roundedRect(bx, by, bw, barHeight, 1, 1, 'F');
+
+        // Value
+        if (barHeight > 5) {
+            doc.setFontSize(8);
+            doc.setTextColor(255, 255, 255);
+            doc.text(d.value.toString(), bx + (bw/2), by + 4, { align: 'center', baseline: 'top' });
+        } else {
+            doc.setFontSize(8);
+            doc.setTextColor(50, 50, 50);
+            doc.text(d.value.toString(), bx + (bw/2), by - 2, { align: 'center' });
+        }
+
+        // Label
+        doc.setFontSize(7);
+        doc.setTextColor(80, 80, 80);
+        doc.text(d.label, bx + (bw/2), y + h - 3, { align: 'center' });
+    });
+}
+
+const loadImage = (src: string): Promise<HTMLImageElement> => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.src = src;
+        img.onload = () => resolve(img);
+        img.onerror = (e) => reject(e);
+    });
 };

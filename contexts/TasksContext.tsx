@@ -2,11 +2,10 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
-import { CompanyTask, Collaborator, UserSettings, Department, AppNotification, isFiscalFinished } from '../types';
+import { CompanyTask, Collaborator, UserSettings, DemandType, AppNotification, isFiscalFinished, parseRobustDate, TaxRegime } from '../types';
 import { 
   fetchAllDataSupabase, 
   updateTaskStatusSupabase, 
-  logChangeSupabase, 
   getUserSettingsSupabase, 
   saveUserSettingsSupabase, 
   fetchNotificationsSupabase, 
@@ -27,10 +26,13 @@ import {
   fetchAvailableYearsSupabase,
   startNewYearCycleSupabase,
   deleteYearCycleSupabase,
-  verifySecurityPasswordSupabase
+  verifySecurityPasswordSupabase,
+  fetchLogsPaginatedSupabase,
+  fetchTaxRegimesSupabase,
+  createTaxRegimeSupabase,
+  deleteTaxRegimeSupabase
 } from '../services/supabaseService';
 import { supabase } from '../services/supabaseClient';
-import { USE_SUPABASE } from '../config/app';
 import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
 
@@ -45,7 +47,6 @@ const QUERY_KEYS = {
 interface TasksContextType {
   tasks: CompanyTask[];
   collaborators: Collaborator[];
-  logs: string[][]; // Added logs
   isLoading: boolean;
   fetchNextPage: () => void;
   hasNextPage: boolean;
@@ -60,6 +61,16 @@ interface TasksContextType {
   markAllNotificationsRead: () => Promise<void>;
   unreadCount: number; // Notificações do sistema
   onlineUsers: string[]; // IDs dos usuários online
+  
+  // Auditoria (Logs)
+  logs: string[][]; 
+  infiniteLogs: any; // Result from useInfiniteQuery
+  fetchNextLogs: () => void;
+  hasMoreLogs: boolean;
+  isFetchingNextLogs: boolean;
+  
+  // New Pagination support
+  fetchLogsPage: (page: number, pageSize: number) => Promise<{ logs: string[][], totalCount: number }>;
   
   // Company Management (Supabase Only)
   createCompany: (company: CompanyTask) => Promise<void>;
@@ -82,6 +93,11 @@ interface TasksContextType {
   startNewCycle: (targetYear: string) => Promise<void>;
   deleteYearCycle: (year: string) => Promise<void>;
   verifySecurityPassword: (password: string) => Promise<boolean>;
+  
+  // Tax Regimes
+  taxRegimes: TaxRegime[];
+  addTaxRegime: (name: string) => Promise<void>;
+  removeTaxRegime: (id: string, name: string) => Promise<void>;
 }
 
 const TasksContext = createContext<TasksContextType | undefined>(undefined);
@@ -91,7 +107,9 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const { addNotification } = useToast();
   const queryClient = useQueryClient();
   
-  const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
+  const [presenceOnlineUsers, setPresenceOnlineUsers] = useState<string[]>([]);
+  const [taxRegimes, setTaxRegimes] = useState<TaxRegime[]>([]);
+
   const [activeYear, setActiveYear] = useState<string>(() => {
       const stored = localStorage.getItem('lm_activeYear');
       // Default to 2026 as per prompt context, or current year
@@ -104,7 +122,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       density: (localStorage.getItem('lm_density') as any) || 'comfortable',
       autoRefresh: localStorage.getItem('lm_autoRefresh') !== 'false',
       reduceMotion: localStorage.getItem('lm_reduceMotion') === 'true',
-      defaultDepartment: (localStorage.getItem('lm_defaultDept') as Department) || Department.FISCAL,
+      defaultDepartment: (localStorage.getItem('lm_defaultDept') as DemandType) || DemandType.FISCAL,
       defaultYear: localStorage.getItem('lm_defaultYear') || '2026',
       defaultTab: (localStorage.getItem('lm_defaultTab') as any) || 'dashboard',
       enableNotifications: localStorage.getItem('lm_notifications') !== 'false',
@@ -119,17 +137,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Helper to parse logs & dates
   const parseLogDate = (dateStr: string) => {
-    try {
-        if (!dateStr) return new Date(0);
-        const cleanStr = dateStr.replace(' em ', ' '); 
-        const [datePart, timePart] = cleanStr.includes(',') ? cleanStr.split(', ') : cleanStr.split(' ');
-        if (!datePart || !timePart) return new Date(0);
-        const [day, month, year] = datePart.split('/');
-        const [hour, minute, second] = timePart.split(':');
-        return new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second || 0));
-    } catch (e) {
-        return new Date(0);
-    }
+    return parseRobustDate(dateStr);
   };
 
   const parseBrDate = (str: string) => {
@@ -148,7 +156,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   } = useQuery({
     queryKey: QUERY_KEYS.tasks(activeYear),
     queryFn: async () => {
-      if (USE_SUPABASE && supabase) {
+      if (supabase) {
         const { tasks } = await fetchAllDataSupabase(activeYear);
         return tasks;
       }
@@ -167,13 +175,14 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const { data: collaboratorsData, isLoading: isCollabsLoading } = useQuery({
     queryKey: QUERY_KEYS.collaborators,
     queryFn: async () => {
-      if (USE_SUPABASE && supabase) {
+      if (supabase) {
         const { data } = await supabase.from('colaboradores').select('*').is('deleted_at', null);
         return (data || []).map((c: any) => ({
             uuid: c.id,
             id: c.codigo_externo,
             name: c.nome,
-            department: c.departamento,
+            department: c.department,
+            permissions: c.permissions || [],
             lastSeen: c.last_seen || null,
             role: c.role || (c.is_admin ? 'admin' : 'user'),
             active: c.active !== false,
@@ -183,15 +192,17 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return [];
     },
     enabled: !!currentUser,
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 30, // 30 seconds
+    refetchInterval: 60000, // 1 minute
   });
 
   // 3. Logs Query
   const { data: logsData, isLoading: isLogsLoading } = useQuery({
     queryKey: QUERY_KEYS.logs(activeYear),
     queryFn: async () => {
-      if (USE_SUPABASE && supabase) {
-        const { data } = await supabase.from('registros').select('*').eq('ano', activeYear).order('created_at', { ascending: false }).limit(5000);
+      if (supabase) {
+        // Increase limit for daily modifications to be more robust
+        const { data } = await supabase.from('registros').select('*').eq('ano', activeYear).order('created_at', { ascending: false }).limit(2000);
         return (data || []).map((l: any) => [
             new Date(l.created_at).toLocaleString('pt-BR'),
             l.descricao,
@@ -206,6 +217,37 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     refetchInterval: settings.autoRefresh ? 60000 : false, // 1 minute fallback
   });
 
+  // 3.1. Infinite Logs Query for Auditoria View
+  const {
+    data: infiniteLogsData,
+    fetchNextPage: fetchNextLogs,
+    hasNextPage: hasMoreLogs,
+    isFetchingNextPage: isFetchingNextLogs
+  } = useInfiniteQuery({
+    queryKey: ['infinite-logs', activeYear],
+    queryFn: async ({ pageParam = 0 }) => {
+        if (supabase) {
+            const { logs, hasMore } = await fetchLogsPaginatedSupabase('', pageParam, 50, activeYear);
+            return { logs, hasMore, nextPage: pageParam + 1 };
+        }
+        return { logs: [], hasMore: false, nextPage: null };
+    },
+    getNextPageParam: (lastPage) => lastPage.hasMore ? lastPage.nextPage : undefined,
+    initialPageParam: 0,
+    enabled: !!currentUser,
+  });
+
+  const infiniteLogs = useMemo(() => {
+      return infiniteLogsData?.pages.flatMap(page => page.logs) || [];
+  }, [infiniteLogsData]);
+
+  const fetchLogsPage = async (page: number, pageSize: number) => {
+      if (supabase) {
+          return await fetchLogsPaginatedSupabase('', page, pageSize, activeYear);
+      }
+      return { logs: [], totalCount: 0, hasMore: false };
+  };
+
   const refreshData = async () => {
     await Promise.all([
       refreshTasks(),
@@ -219,7 +261,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     queryKey: QUERY_KEYS.notifications(currentUser?.name || '', activeYear),
     queryFn: async () => {
       if (!currentUser) return [];
-      if (USE_SUPABASE && supabase) {
+      if (supabase) {
         return await fetchNotificationsSupabase(currentUser.name, activeYear);
       }
       return [];
@@ -233,7 +275,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     queryKey: QUERY_KEYS.settings(currentUser?.id || ''),
     queryFn: async () => {
       if (!currentUser) return null;
-      if (USE_SUPABASE && supabase) {
+      if (supabase) {
         return await getUserSettingsSupabase(currentUser.id);
       }
       return null;
@@ -244,9 +286,18 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Sync Cloud Settings to Local State
   useEffect(() => {
     if (cloudSettings) {
-      setSettings(prev => ({ ...prev, ...cloudSettings }));
+      // Filter out null values from cloudSettings to avoid overwriting defaults with null
+      const validSettings = Object.entries(cloudSettings).reduce((acc, [key, value]) => {
+        if (value !== null && value !== undefined) {
+          (acc as any)[key] = value;
+        }
+        return acc;
+      }, {} as Partial<UserSettings>);
+
+      setSettings(prev => ({ ...prev, ...validSettings }));
+      
       if (cloudSettings.theme === 'dark') document.documentElement.classList.add('dark');
-      else document.documentElement.classList.remove('dark');
+      else if (cloudSettings.theme === 'light') document.documentElement.classList.remove('dark');
     }
   }, [cloudSettings]);
 
@@ -254,7 +305,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const { data: fetchedYears } = useQuery({
     queryKey: ['availableYears'],
     queryFn: async () => {
-      if (USE_SUPABASE && supabase) {
+      if (supabase) {
         return await fetchAvailableYearsSupabase();
       }
       return ['2026'];
@@ -276,7 +327,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const startNewCycleMutation = useMutation({
       mutationFn: async (targetYear: string) => {
-          if (!USE_SUPABASE || !currentUser) return;
+          if (!currentUser) return;
           await startNewYearCycleSupabase(activeYear, targetYear, currentUser.name);
       },
       onSuccess: () => {
@@ -295,7 +346,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const deleteYearCycleMutation = useMutation({
       mutationFn: async (year: string) => {
-          if (!USE_SUPABASE || !currentUser) return;
+          if (!currentUser) return;
           await deleteYearCycleSupabase(year, currentUser.name);
       },
       onSuccess: () => {
@@ -315,7 +366,6 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const verifySecurityPassword = async (password: string): Promise<boolean> => {
-      if (!USE_SUPABASE) return password === 'LMM@2026'; // Fallback for Sheets
       return await verifySecurityPasswordSupabase(password);
   };
 
@@ -325,6 +375,18 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [tasksData]);
 
   const collaborators = useMemo(() => collaboratorsData || [], [collaboratorsData]);
+
+  // Combine Presence with LastSeen fallback for robust "Online" status
+  const onlineUsers = useMemo(() => {
+    const now = new Date().getTime();
+    const threshold = 3 * 60 * 1000; // 3 minutes threshold for heartbeat fallback
+    
+    const recentLastSeenIds = collaborators
+      .filter(c => c.lastSeen && (now - new Date(c.lastSeen).getTime()) < threshold)
+      .map(c => c.id);
+      
+    return [...new Set([...presenceOnlineUsers, ...recentLastSeenIds])];
+  }, [presenceOnlineUsers, collaborators]);
   const logs = useMemo(() => logsData || [], [logsData]);
 
   const lastSeenMap = useMemo(() => {
@@ -456,7 +518,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 addNotification("Alteração Detectada", `${editorName} atualizou ${newT.name}`, 'info');
 
                 // Persist notification to DB
-                if (USE_SUPABASE && currentUser) {
+                if (currentUser) {
                     const notifId = crypto.randomUUID();
                     sendNotificationSupabase({
                         id: notifId,
@@ -482,7 +544,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Supabase Realtime Subscription & Presence
   useEffect(() => {
-      if (!currentUser || !USE_SUPABASE || !supabase) return;
+      if (!currentUser || !supabase) return;
 
       // 1. Presence Channel
       const presenceChannel = supabase.channel('online-users');
@@ -496,15 +558,28 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           .on('presence', { event: 'sync' }, () => {
               const state = presenceChannel.presenceState();
               const userIds = Object.values(state).flat().map((u: any) => u.user_id);
-              // Ensure current user is always included if we are connected
+              // Ensure current user is always included if we are connected to avoid flickering
               const uniqueIds = [...new Set([...userIds, currentUser.id])];
-              setOnlineUsers(uniqueIds);
+              setPresenceOnlineUsers(uniqueIds);
+          })
+          .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+              // Optional: handle join specifically if needed
+          })
+          .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+              // Optional: handle leave specifically if needed
           })
           .subscribe(async (status) => {
               if (status === 'SUBSCRIBED') {
                   await trackPresence();
               }
           });
+
+      // Re-track periodically to ensure presence doesn't drop
+      const reTrackInterval = setInterval(() => {
+          if (presenceChannel.state === 'joined') {
+              trackPresence();
+          }
+      }, 30 * 1000); // Every 30 seconds
 
       const handleVisibilityChange = () => {
           if (document.visibilityState === 'visible') {
@@ -553,7 +628,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // 3. Periodic Heartbeat (Update last_seen in DB)
       const heartbeatInterval = setInterval(() => {
           updateUserPresenceSupabase(currentUser.id);
-      }, 5 * 60 * 1000); // Every 5 minutes
+      }, 1 * 60 * 1000); // Every 1 minute (increased frequency for fallback)
 
       // Initial Heartbeat
       updateUserPresenceSupabase(currentUser.id);
@@ -562,35 +637,15 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           supabase.removeChannel(presenceChannel);
           supabase.removeChannel(changesChannel);
           clearInterval(heartbeatInterval);
+          clearInterval(reTrackInterval);
           document.removeEventListener('visibilitychange', handleVisibilityChange);
       };
   }, [currentUser, refreshData]);
 
-  // Polling
+  // Polling removed as Supabase uses Realtime
   useEffect(() => {
-      if (!currentUser || !settings.autoRefresh || USE_SUPABASE) return;
-      
-      let timeoutId: ReturnType<typeof setTimeout>;
-      let isMounted = true;
-
-      const poll = async () => {
-          if (document.visibilityState === 'visible') {
-              await refreshData();
-          }
-          if (isMounted) {
-              const jitter = Math.floor(Math.random() * 10000);
-              timeoutId = setTimeout(poll, 30000 + jitter);
-          }
-      };
-      
-      const initialJitter = Math.floor(Math.random() * 5000);
-      timeoutId = setTimeout(poll, 30000 + initialJitter);
-
-      return () => {
-          isMounted = false;
-          clearTimeout(timeoutId);
-      };
-  }, [currentUser, settings.autoRefresh, refreshData]);
+      // No-op
+  }, []);
 
   // --- MUTATIONS ---
 
@@ -600,12 +655,9 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const timestamp = new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
       const editorInfo = `${currentUser.name} em ${timestamp}`;
 
-      if (USE_SUPABASE && supabase) {
+      if (supabase) {
         // updateTaskStatusSupabase already logs the change internally
         await updateTaskStatusSupabase(task, field, newValue, editorInfo);
-      } else {
-        await updateTaskStatus(task, field, newValue, editorInfo);
-        await logChange(`Alteração em [${task.name}]: ${field} -> ${newValue}`, currentUser.name, task.id);
       }
     },
     onMutate: async ({ task, field, newValue }) => {
@@ -646,10 +698,8 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const updateSettingMutation = useMutation({
     mutationFn: async ({ key, value, newSettings }: { key: string, value: any, newSettings: UserSettings }) => {
       if (!currentUser) return;
-      if (USE_SUPABASE && supabase) {
+      if (supabase) {
         await saveUserSettingsSupabase(currentUser.id, currentUser.name, newSettings);
-      } else {
-        await saveUserSettings(currentUser.id, currentUser.name, newSettings);
       }
     },
     onSuccess: () => {
@@ -704,10 +754,8 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const target = notifications.find(n => n.id === id);
       if (!target || target.isRead) return;
 
-      if (USE_SUPABASE && supabase) {
+      if (supabase) {
         await markNotificationAsReadSupabase(target.id);
-      } else if (target.rowIndex) {
-        await markNotificationAsRead(target.rowIndex);
       }
     },
     onMutate: async (id) => {
@@ -745,13 +793,8 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           updateSetting('readDeadlineNotifications', newState);
       }
 
-      if (USE_SUPABASE && supabase) {
+      if (supabase) {
         await markAllNotificationsAsReadSupabase(currentUser.name);
-      } else {
-        const unread = notifications.filter(n => !n.isRead && n.rowIndex);
-        for (const n of unread) {
-          if (n.rowIndex) await markNotificationAsRead(n.rowIndex);
-        }
       }
     },
     onMutate: async () => {
@@ -774,7 +817,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const createCompanyMutation = useMutation({
     mutationFn: async (company: CompanyTask) => {
-      if (!USE_SUPABASE || !currentUser) return;
+      if (!currentUser) return;
       // Ensure the company is created in the active year
       await createCompanySupabase({ ...company, ano: activeYear }, currentUser.name);
     },
@@ -791,7 +834,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const bulkCreateCompaniesMutation = useMutation({
     mutationFn: async (companies: CompanyTask[]) => {
-      if (!USE_SUPABASE || !currentUser) return;
+      if (!currentUser) return;
       const companiesWithYear = companies.map(c => ({ ...c, ano: activeYear }));
       await bulkCreateCompaniesSupabase(companiesWithYear, currentUser.name);
     },
@@ -808,7 +851,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const updateCompanyMutation = useMutation({
     mutationFn: async (company: CompanyTask) => {
-      if (!USE_SUPABASE || !currentUser) return;
+      if (!currentUser) return;
       // Ensure we are updating the company in the correct year context
       await updateCompanyDataSupabase({ ...company, ano: activeYear }, currentUser.name);
     },
@@ -825,7 +868,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const toggleCompanyActiveMutation = useMutation({
     mutationFn: async ({ companyId, isActive }: { companyId: string, isActive: boolean }) => {
-      if (!USE_SUPABASE || !currentUser) return;
+      if (!currentUser) return;
       await toggleCompanyActiveSupabase(companyId, isActive, currentUser.name, activeYear);
     },
     onSuccess: (data, variables) => {
@@ -841,7 +884,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const deleteCompanyMutation = useMutation({
     mutationFn: async (companyId: string) => {
-      if (!USE_SUPABASE || !currentUser) return;
+      if (!currentUser) return;
       await deleteCompanySupabase(companyId, currentUser.name, activeYear);
     },
     onSuccess: () => {
@@ -865,12 +908,9 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const task = tasks.find(t => t.id === id);
           if (!task) return;
           
-          if (USE_SUPABASE && supabase) {
+          if (supabase) {
               // updateTaskStatusSupabase already logs the change internally
               await updateTaskStatusSupabase(task, field, newValue, editorInfo);
-          } else {
-              await updateTaskStatus(task, field, newValue, editorInfo);
-              await logChange(`Alteração em Massa [${task.name}]: ${field} -> ${newValue}`, currentUser.name, task.id);
           }
       });
 
@@ -920,7 +960,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const createCollaboratorMutation = useMutation({
     mutationFn: async (collaborator: Collaborator) => {
-      if (!USE_SUPABASE || !currentUser) return;
+      if (!currentUser) return;
       await createCollaboratorSupabase(collaborator);
     },
     onSuccess: () => {
@@ -936,7 +976,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const updateCollaboratorMutation = useMutation({
     mutationFn: async (collaborator: Collaborator) => {
-      if (!USE_SUPABASE || !currentUser) return;
+      if (!currentUser) return;
       await updateCollaboratorSupabase(collaborator);
     },
     onSuccess: () => {
@@ -952,7 +992,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const toggleCollaboratorActiveMutation = useMutation({
     mutationFn: async ({ collaboratorId, isActive }: { collaboratorId: string, isActive: boolean }) => {
-      if (!USE_SUPABASE || !currentUser) return;
+      if (!currentUser) return;
       await toggleCollaboratorActiveSupabase(collaboratorId, isActive);
     },
     onSuccess: (data, variables) => {
@@ -968,7 +1008,7 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const deleteCollaboratorMutation = useMutation({
     mutationFn: async (collaboratorId: string) => {
-      if (!USE_SUPABASE || !currentUser) return;
+      if (!currentUser) return;
       await deleteCollaboratorSupabase(collaboratorId);
     },
     onSuccess: () => {
@@ -982,11 +1022,64 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     deleteCollaboratorMutation.mutate(collaboratorId);
   };
 
+  // --- TAX REGIMES ---
+  const { data: fetchedRegimes } = useQuery({
+      queryKey: ['taxRegimes'],
+      queryFn: async () => {
+          if (supabase) {
+              return await fetchTaxRegimesSupabase();
+          }
+          return [];
+      },
+      staleTime: 1000 * 60 * 60, // 1 hour
+  });
+
+  useEffect(() => {
+      if (fetchedRegimes) {
+          setTaxRegimes(fetchedRegimes);
+      }
+  }, [fetchedRegimes]);
+
+  const addTaxRegime = async (name: string) => {
+      if (!currentUser) return;
+      if (supabase) {
+          try {
+              const newRegime = await createTaxRegimeSupabase(name, currentUser.name);
+              if (newRegime) {
+                  setTaxRegimes(prev => [...prev, newRegime].sort((a, b) => a.name.localeCompare(b.name)));
+                  queryClient.invalidateQueries({ queryKey: ['taxRegimes'] });
+                  addNotification("Sucesso", "Regime tributário adicionado.", "success");
+              }
+          } catch (e) {
+              addNotification("Erro", "Erro ao adicionar regime.", "error");
+          }
+      }
+  };
+
+  const removeTaxRegime = async (id: string, name: string) => {
+      if (!currentUser) return;
+      if (supabase) {
+          try {
+              await deleteTaxRegimeSupabase(id, name, currentUser.name);
+              setTaxRegimes(prev => prev.filter(r => r.id !== id));
+              queryClient.invalidateQueries({ queryKey: ['taxRegimes'] });
+              addNotification("Sucesso", "Regime tributário removido.", "success");
+          } catch (e) {
+              addNotification("Erro", "Erro ao remover regime.", "error");
+          }
+      }
+  };
+
   return (
     <TasksContext.Provider value={{ 
         tasks, 
         collaborators, 
         logs, // Expose logs
+        infiniteLogs,
+        fetchNextLogs,
+        hasMoreLogs,
+        isFetchingNextLogs,
+        fetchLogsPage,
         isLoading, 
         fetchNextPage,
         hasNextPage,
@@ -1019,7 +1112,10 @@ export const TasksProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         availableYears,
         startNewCycle,
         deleteYearCycle,
-        verifySecurityPassword
+        verifySecurityPassword,
+        taxRegimes,
+        addTaxRegime,
+        removeTaxRegime
     }}>
       {children}
     </TasksContext.Provider>

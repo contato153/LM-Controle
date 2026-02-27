@@ -2,17 +2,22 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useTasks } from '../contexts/TasksContext';
 import { useAuth } from '../contexts/AuthContext';
 import { CompanyTask } from '../types';
-import { Search, Plus, Edit2, Trash2, Power, AlertTriangle, Check, X, Building2, Upload, FileText, Download } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, Power, AlertTriangle, Check, X, Building2, Upload, FileText, Download, Database } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const CompaniesView: React.FC = () => {
-  const { tasks, createCompany, bulkCreateCompanies, updateCompany, toggleCompanyActive, deleteCompany, isLoading } = useTasks();
+  const { tasks, createCompany, bulkCreateCompanies, updateCompany, toggleCompanyActive, deleteCompany, isLoading, taxRegimes, addTaxRegime, removeTaxRegime } = useTasks();
   const { isAdmin, isEffectiveAdmin } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [showInactive, setShowInactive] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isRegimeModalOpen, setIsRegimeModalOpen] = useState(false);
   const [editingCompany, setEditingCompany] = useState<CompanyTask | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  // Regime Management State
+  const [newRegimeName, setNewRegimeName] = useState('');
+  const [regimeToDelete, setRegimeToDelete] = useState<{id: string, name: string} | null>(null);
 
   // Import State
   const [importMode, setImportMode] = useState(false);
@@ -223,7 +228,10 @@ const CompaniesView: React.FC = () => {
   const handleOpenModal = (company?: CompanyTask) => {
     if (company) {
       setEditingCompany(company);
-      setFormData({ ...company });
+      setFormData({ 
+          ...company,
+          regime: company.regime || 'SIMPLES NACIONAL'
+      });
       setImportMode(false);
     } else {
       setEditingCompany(null);
@@ -285,13 +293,22 @@ const CompaniesView: React.FC = () => {
             </p>
           </div>
           {isEffectiveAdmin && (
-            <button 
-              onClick={() => handleOpenModal()}
-              className="bg-lm-yellow hover:bg-yellow-500 text-gray-900 px-4 py-2 rounded-xl font-bold shadow-sm flex items-center gap-2 transition-all"
-            >
-              <Plus size={18} />
-              Nova Empresa
-            </button>
+            <div className="flex gap-3">
+                <button 
+                onClick={() => setIsRegimeModalOpen(true)}
+                className="bg-white dark:bg-zinc-800 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-700 px-4 py-2 rounded-xl font-bold shadow-sm flex items-center gap-2 transition-all"
+                >
+                <Database size={18} />
+                Gerenciar Regimes
+                </button>
+                <button 
+                onClick={() => handleOpenModal()}
+                className="bg-lm-yellow hover:bg-yellow-500 text-gray-900 px-4 py-2 rounded-xl font-bold shadow-sm flex items-center gap-2 transition-all"
+                >
+                <Plus size={18} />
+                Nova Empresa
+                </button>
+            </div>
           )}
         </div>
 
@@ -309,19 +326,18 @@ const CompaniesView: React.FC = () => {
           </div>
           
           <select 
-            value={filterRegime} 
+            value={filterRegime || ''} 
             onChange={(e) => setFilterRegime(e.target.value)}
             className="px-4 py-2.5 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-lm-yellow/50 cursor-pointer"
           >
             <option value="">Todos os Regimes</option>
-            <option value="SIMPLES NACIONAL">Simples Nacional</option>
-            <option value="LUCRO PRESUMIDO">Lucro Presumido</option>
-            <option value="LUCRO REAL">Lucro Real</option>
-            <option value="IMUNE/ISENTA">Imune / Isenta</option>
+            {taxRegimes.map(r => (
+                <option key={r.id} value={r.name}>{r.name}</option>
+            ))}
           </select>
 
           <select 
-            value={filterStatus} 
+            value={filterStatus || ''} 
             onChange={(e) => setFilterStatus(e.target.value)}
             className="px-4 py-2.5 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-lm-yellow/50 cursor-pointer"
           >
@@ -537,14 +553,13 @@ const CompaniesView: React.FC = () => {
                         <div className="space-y-1">
                         <label className="text-xs font-bold text-gray-500 uppercase">Regime Tributário</label>
                         <select 
-                            value={formData.regime} 
+                            value={formData.regime || 'SIMPLES NACIONAL'} 
                             onChange={e => setFormData({...formData, regime: e.target.value})}
                             className="w-full p-3 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl text-sm font-medium focus:ring-2 focus:ring-lm-yellow/50 outline-none appearance-none cursor-pointer"
                         >
-                            <option value="SIMPLES NACIONAL">Simples Nacional</option>
-                            <option value="LUCRO PRESUMIDO">Lucro Presumido</option>
-                            <option value="LUCRO REAL">Lucro Real</option>
-                            <option value="IMUNE/ISENTA">Imune / Isenta</option>
+                            {taxRegimes.map(r => (
+                                <option key={r.id} value={r.name}>{r.name}</option>
+                            ))}
                         </select>
                         </div>
 
@@ -669,6 +684,114 @@ const CompaniesView: React.FC = () => {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Regime Management Modal */}
+      <AnimatePresence>
+        {isRegimeModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100 dark:border-zinc-800 flex flex-col max-h-[90vh]"
+            >
+              <div className="p-6 border-b border-gray-100 dark:border-zinc-800 flex justify-between items-center shrink-0">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                    <Database size={20} className="text-lm-yellow" />
+                    Gerenciar Regimes Tributários
+                </h3>
+                <button onClick={() => setIsRegimeModalOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="p-6 overflow-y-auto">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Adicione ou remova regimes tributários disponíveis para as empresas.</p>
+                
+                <div className="flex gap-2 mb-6">
+                    <input 
+                        type="text" 
+                        value={newRegimeName}
+                        onChange={(e) => setNewRegimeName(e.target.value.toUpperCase())}
+                        placeholder="NOVO REGIME"
+                        className="flex-1 p-2 bg-gray-50 dark:bg-black border border-gray-200 dark:border-zinc-700 rounded-lg text-sm font-bold focus:ring-2 focus:ring-lm-yellow/50 outline-none"
+                    />
+                    <button 
+                        onClick={() => {
+                            if (newRegimeName.trim()) {
+                                addTaxRegime(newRegimeName.trim());
+                                setNewRegimeName('');
+                            }
+                        }}
+                        disabled={!newRegimeName.trim()}
+                        className="px-4 py-2 bg-lm-yellow hover:bg-yellow-500 text-white rounded-lg text-sm font-bold transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <Plus size={16} />
+                        Adicionar
+                    </button>
+                </div>
+
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                    {taxRegimes.map(regime => (
+                        <div key={regime.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-zinc-900 rounded-lg border border-gray-100 dark:border-zinc-800">
+                            <span className="text-sm font-bold text-gray-700 dark:text-gray-300">{regime.name}</span>
+                            <button 
+                                onClick={() => setRegimeToDelete({ id: regime.id, name: regime.name })}
+                                className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                            >
+                                <Trash2 size={16} />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Regime Confirmation Modal */}
+      <AnimatePresence>
+        {regimeToDelete && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="bg-white dark:bg-[#09090b] rounded-2xl shadow-2xl border border-gray-200 dark:border-zinc-800 p-8 max-w-md w-full"
+                >
+                    <div className="flex items-center gap-4 text-red-600 mb-6">
+                        <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-full">
+                            <Trash2 size={24} />
+                        </div>
+                        <h3 className="text-xl font-bold">Excluir Regime</h3>
+                    </div>
+                    
+                    <p className="text-sm text-gray-600 dark:text-gray-300 mb-6 leading-relaxed">
+                        Tem certeza que deseja excluir o regime tributário <strong>{regimeToDelete.name}</strong>? Esta ação não pode ser desfeita.
+                    </p>
+                    
+                    <div className="flex gap-3">
+                        <button 
+                            onClick={() => {
+                                removeTaxRegime(regimeToDelete.id, regimeToDelete.name);
+                                setRegimeToDelete(null);
+                            }}
+                            className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2"
+                        >
+                            Sim, Excluir
+                        </button>
+                        <button 
+                            onClick={() => setRegimeToDelete(null)}
+                            className="flex-1 py-3 bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-gray-300 rounded-xl font-bold transition-all hover:bg-gray-200 dark:hover:bg-zinc-700"
+                        >
+                            Cancelar
+                        </button>
+                    </div>
+                </motion.div>
+            </div>
         )}
       </AnimatePresence>
 

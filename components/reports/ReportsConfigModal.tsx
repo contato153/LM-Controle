@@ -9,14 +9,14 @@ interface ReportsConfigModalProps {
         subtitle: string;
         includeCharts: boolean;
         includeTable: boolean;
-        orientation: 'portrait' | 'landscape';
+        orientation: 'landscape';
     };
     setReportConfig: React.Dispatch<React.SetStateAction<{
         title: string;
         subtitle: string;
         includeCharts: boolean;
         includeTable: boolean;
-        orientation: 'portrait' | 'landscape';
+        orientation: 'landscape';
     }>>;
     handleGeneratePDF: () => void;
     isGenerating: boolean;
@@ -27,8 +27,8 @@ export const ReportsConfigModal: React.FC<ReportsConfigModalProps> = ({ showConf
 
     return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-enter">
-            <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-md border border-gray-200 dark:border-zinc-800 overflow-hidden">
-                <div className="p-6 border-b border-gray-100 dark:border-zinc-800 flex justify-between items-center bg-gray-50/50 dark:bg-zinc-900/50">
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-md border border-gray-200 dark:border-zinc-800 overflow-hidden max-h-[90vh] flex flex-col">
+                <div className="p-6 border-b border-gray-100 dark:border-zinc-800 flex justify-between items-center bg-gray-50/50 dark:bg-zinc-900/50 flex-shrink-0">
                     <h3 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
                         <FileText size={20} className="text-lm-dark dark:text-lm-yellow" />
                         Configurar Relatório PDF
@@ -38,7 +38,7 @@ export const ReportsConfigModal: React.FC<ReportsConfigModalProps> = ({ showConf
                     </button>
                 </div>
 
-                <div className="p-6 space-y-5">
+                <div className="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1">
                     <div>
                         <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Título do Relatório</label>
                         <input
@@ -81,27 +81,9 @@ export const ReportsConfigModal: React.FC<ReportsConfigModalProps> = ({ showConf
                             <span className="font-bold text-sm">Incluir Tabela</span>
                         </div>
                     </div>
-
-                    <div>
-                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Orientação</label>
-                        <div className="flex bg-gray-100 dark:bg-zinc-800 p-1 rounded-xl">
-                            <button
-                                onClick={() => setReportConfig(prev => ({ ...prev, orientation: 'portrait' }))}
-                                className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${reportConfig.orientation === 'portrait' ? 'bg-white dark:bg-zinc-700 shadow-sm text-gray-900 dark:text-white' : 'text-gray-500'}`}
-                            >
-                                Retrato (A4)
-                            </button>
-                            <button
-                                onClick={() => setReportConfig(prev => ({ ...prev, orientation: 'landscape' }))}
-                                className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${reportConfig.orientation === 'landscape' ? 'bg-white dark:bg-zinc-700 shadow-sm text-gray-900 dark:text-white' : 'text-gray-500'}`}
-                            >
-                                Paisagem (A4)
-                            </button>
-                        </div>
-                    </div>
                 </div>
 
-                <div className="p-6 border-t border-gray-100 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900/50 flex justify-end gap-3">
+                <div className="p-6 border-t border-gray-100 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900/50 flex justify-end gap-3 flex-shrink-0">
                     <button
                         onClick={() => setShowConfigModal(false)}
                         className="px-5 py-2.5 text-gray-600 dark:text-gray-300 font-bold hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-xl transition-colors"

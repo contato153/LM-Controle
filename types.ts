@@ -1,12 +1,22 @@
 
 
-export enum Department {
+export enum DemandType {
   TODOS = 'Todos',
   FISCAL = 'Fiscal',
   CONTABIL = 'Contábil',
+  LUCRO = 'Distribuição de Lucro',
+  REINF = 'EFD-Reinf',
   LUCRO_REINF = 'Distribuição de Lucro/EFD-Reinf',
   ECD = 'ECD',
   ECF = 'ECF'
+}
+
+export enum Department {
+  FISCAL = 'FISCAL',
+  CONTABIL = 'CONTÁBIL',
+  DITE = 'DITE',
+  TI = 'T.I',
+  MARKETING = 'MARKETING'
 }
 
 // Status baseados nas cores e textos da imagem
@@ -19,11 +29,19 @@ export type StatusECD = 'ENVIADA' | 'PENDENTE' | 'DISPENSADA';
 export type StatusECF = 'ENVIADA' | 'PENDENTE' | 'NÃO SE APLICA';
 export type Priority = 'ALTA' | 'MÉDIA' | 'BAIXA' | ''; // Added empty string for auto-calc
 
+export interface TaxRegime {
+    id: string;
+    name: string;
+    created_at?: string;
+    created_by?: string;
+}
+
 export interface Collaborator {
   uuid?: string; // Supabase internal ID
   id: string; // ID DE ENTRADA (Col A)
   name: string; // NOME DO COLABORADOR (Col B)
-  department?: string; // DEPARTAMENTO (Col C)
+  department?: string; // DEPARTAMENTO (Col C) - Keeping as string for flexibility with custom depts
+  permissions?: DemandType[]; // List of demand types they can edit
   lastSeen?: string; // ISO Date String
   role?: 'admin' | 'user';
   active?: boolean;
@@ -155,7 +173,7 @@ export interface UserSettings {
     density: 'comfortable' | 'compact';
     autoRefresh: boolean;
     reduceMotion: boolean;
-    defaultDepartment: Department;
+    defaultDepartment: DemandType;
     defaultYear?: string; // Novo campo
     defaultTab?: 'my_day' | 'my_obligations' | 'kanban' | 'reports' | 'team' | 'settings'; // Novo campo
     enableNotifications: boolean;
@@ -182,6 +200,42 @@ export interface AppNotification {
 }
 
 // --- HELPERS ---
+
+export const parseRobustDate = (dateStr: string): Date => {
+    if (!dateStr) return new Date(0);
+    try {
+        // 1. Try ISO format (e.g., 2026-02-13T19:41:50Z or 2026-02-13 19:41:50+00)
+        // Remove timezone suffix if it's like +00 to help native Date parser if needed, 
+        // but new Date() usually handles it.
+        const isoDate = new Date(dateStr);
+        if (!isNaN(isoDate.getTime())) return isoDate;
+
+        // 2. Try BR format (DD/MM/YYYY HH:MM:SS)
+        const cleanStr = dateStr.replace(',', '').replace(' em ', ' ').trim();
+        const parts = cleanStr.split(' ');
+        if (parts.length >= 1) {
+            const dateParts = parts[0].split('/');
+            if (dateParts.length === 3) {
+                const day = parseInt(dateParts[0], 10);
+                const month = parseInt(dateParts[1], 10) - 1;
+                const year = parseInt(dateParts[2], 10);
+                
+                let hour = 0, min = 0, sec = 0;
+                if (parts[1]) {
+                    const timeParts = parts[1].split(':');
+                    hour = parseInt(timeParts[0], 10) || 0;
+                    min = parseInt(timeParts[1], 10) || 0;
+                    sec = parseInt(timeParts[2], 10) || 0;
+                }
+                const brDate = new Date(year, month, day, hour, min, sec);
+                if (!isNaN(brDate.getTime())) return brDate;
+            }
+        }
+    } catch (e) {
+        // Fallback
+    }
+    return new Date(0);
+};
 
 export const isFiscalFinished = (status: string): boolean => {
     if (!status) return false;

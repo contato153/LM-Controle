@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useTasks } from '../contexts/TasksContext';
 import { useAuth } from '../contexts/AuthContext';
-import { CompanyTask, AppNotification, getEffectivePriority } from '../types';
+import { CompanyTask, AppNotification, getEffectivePriority, parseRobustDate } from '../types';
 import { CheckSquare, MessageSquare, Clock, AlertCircle, ArrowRight, Calendar, Building2, ChevronLeft, ChevronRight, Activity } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -104,22 +104,17 @@ const MyDay: React.FC<MyDayProps> = ({ onNavigate }) => {
     // Map string[][] to objects first
     const mappedLogs = logs.map((log, index) => {
         const timestampStr = log[0] || '';
-        // Try to parse the timestamp "DD/MM/YYYY HH:MM:SS" or "DD/MM/YYYY, HH:MM:SS"
-        const cleanTimestamp = timestampStr.replace(',', '').trim();
-        const parts = cleanTimestamp.split(' ');
-        const dateParts = parts[0]?.split('/') || [];
+        const logDate = parseRobustDate(timestampStr);
         
-        let isTodayLog = false;
-        if (dateParts.length === 3) {
-            const d = parseInt(dateParts[0].replace(/\D/g, ''));
-            const m = parseInt(dateParts[1].replace(/\D/g, '')) - 1; // JS months are 0-indexed
-            const y = parseInt(dateParts[2].replace(/\D/g, ''));
-            isTodayLog = d === todayDay && m === todayMonth && y === todayYear;
-        }
+        const isTodayLog = 
+            logDate.getDate() === todayDay && 
+            logDate.getMonth() === todayMonth && 
+            logDate.getFullYear() === todayYear;
 
         return {
             id: `log-${index}`,
             timestamp: timestampStr,
+            logDate,
             isToday: isTodayLog,
             details: log[1] || '',
             user: log[2] || '',
@@ -132,7 +127,7 @@ const MyDay: React.FC<MyDayProps> = ({ onNavigate }) => {
         // Must be today
         if (!log.isToday) return false;
         
-        // Must be a task I am responsible for
+        // Must be a task (has taskId)
         if (!log.taskId) return false;
         const task = tasks.find(t => t.id === log.taskId);
         if (!task) return false;
@@ -140,21 +135,10 @@ const MyDay: React.FC<MyDayProps> = ({ onNavigate }) => {
         // Filter out inactive tasks
         if (task.active === false) return false;
         
-        const isResponsible = 
-            task.respFiscal === currentUser.name ||
-            task.respContabil === currentUser.name ||
-            task.respBalanco === currentUser.name ||
-            task.respLucro === currentUser.name ||
-            task.respReinf === currentUser.name ||
-            task.respECD === currentUser.name ||
-            task.respECF === currentUser.name;
-            
-        return isResponsible;
+        // User requested to show modifications from all users, not just their responsibilities
+        return true;
     }).sort((a, b) => {
-        // Sort by time part of the timestamp "HH:MM:SS"
-        const timeA = a.timestamp.split(' ')[1] || '';
-        const timeB = b.timestamp.split(' ')[1] || '';
-        return timeB.localeCompare(timeA);
+        return b.logDate.getTime() - a.logDate.getTime();
     }).slice(0, 10);
   }, [logs, tasks, currentUser]);
 

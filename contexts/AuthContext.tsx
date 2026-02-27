@@ -1,9 +1,8 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { Collaborator } from '../types';
+import { Collaborator, DemandType } from '../types';
 import { fetchAllDataSupabase, updateUserPresenceSupabase } from '../services/supabaseService';
 import { supabase } from '../services/supabaseClient';
-import { ADMIN_IDS, USE_SUPABASE } from '../config/app';
 
 interface AuthContextType {
   currentUser: Collaborator | null;
@@ -14,6 +13,7 @@ interface AuthContextType {
   login: (id: string) => Promise<boolean>;
   logout: () => void;
   loginAlert: { type: 'warning' | 'error' | 'info'; message: string } | null;
+  hasPermission: (department: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -26,7 +26,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loginAlert, setLoginAlert] = useState<{ type: 'warning' | 'error' | 'info'; message: string } | null>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const isAdmin = currentUser ? (currentUser.role === 'admin' || ADMIN_IDS.includes(currentUser.id)) : false;
+  const isAdmin = currentUser ? (currentUser.role === 'admin') : false;
   const isEffectiveAdmin = isAdmin && adminMode;
 
   const setAdminMode = (mode: boolean) => {
@@ -43,7 +43,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setCurrentUser(parsedUser);
             
             // Refresh user data from server to get latest role/permissions
-            if (USE_SUPABASE && supabase) {
+            if (supabase) {
                 fetchAllDataSupabase().then(data => {
                     const freshUser = data.collaborators.find(c => c.id === parsedUser.id);
                     if (freshUser) {
@@ -64,9 +64,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Debug Admin Status
   useEffect(() => {
-      if (currentUser) {
-          console.log(`[Auth] User: ${currentUser.name} | Role: ${currentUser.role} | IsAdmin: ${isAdmin}`);
-      }
+      // if (currentUser) {
+      //     console.log(`[Auth] User: ${currentUser.name} | Role: ${currentUser.role} | IsAdmin: ${isAdmin}`);
+      // }
   }, [currentUser, isAdmin]);
 
   const resetIdleTimer = useCallback(() => {
@@ -102,7 +102,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Fetch simple batch to verify user exists
           let collaborators: Collaborator[] = [];
           
-          if (USE_SUPABASE && supabase) {
+          if (supabase) {
               const data = await fetchAllDataSupabase();
               collaborators = data.collaborators;
           } else {
@@ -117,7 +117,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }
               setCurrentUser(user);
               localStorage.setItem('lm_user', JSON.stringify(user));
-              console.log("Logged in via Supabase");
               updateUserPresenceSupabase(user.id).catch(console.error);
               return true;
           }
@@ -130,7 +129,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Real-time Active Status Check
   useEffect(() => {
-      if (!currentUser || !USE_SUPABASE || !supabase) return;
+      if (!currentUser || !supabase) return;
 
       const channel = supabase
           .channel(`user-status-${currentUser.id}`)
@@ -161,7 +160,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [currentUser]);
 
   const logout = () => {
-      if (currentUser && USE_SUPABASE) {
+      if (currentUser) {
           updateUserPresenceSupabase(currentUser.id).catch(console.error);
       }
       setCurrentUser(null);
@@ -169,8 +168,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
   };
 
+  const hasPermission = useCallback((department: string) => {
+    if (isEffectiveAdmin) return true;
+    if (!currentUser) return false;
+    
+    if (currentUser.permissions && currentUser.permissions.length > 0) {
+        return currentUser.permissions.includes(department) || currentUser.permissions.includes(DemandType.TODOS);
+    }
+    
+    return currentUser.department === department || currentUser.department === DemandType.TODOS;
+  }, [currentUser, isEffectiveAdmin]);
+
   return (
-    <AuthContext.Provider value={{ currentUser, isAdmin, isEffectiveAdmin, adminMode, setAdminMode, login, logout, loginAlert }}>
+    <AuthContext.Provider value={{ currentUser, isAdmin, isEffectiveAdmin, adminMode, setAdminMode, login, logout, loginAlert, hasPermission }}>
       {children}
     </AuthContext.Provider>
   );
@@ -181,3 +191,4 @@ export const useAuth = () => {
   if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
+

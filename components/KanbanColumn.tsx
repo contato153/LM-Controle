@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect, useCallback } from 'react';
-import { CompanyTask, Department } from '../types';
+import { CompanyTask, DemandType } from '../types';
 import KanbanCard from './KanbanCard';
 import { useTasks } from '../contexts/TasksContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -12,7 +12,7 @@ interface KanbanColumnProps {
   title: string;
   color: string;
   tasks: CompanyTask[];
-  currentDept: Department;
+  currentDept: DemandType;
   onCardClick: (task: CompanyTask) => void;
   activeView: string;
   statusField: keyof CompanyTask;
@@ -31,7 +31,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
   responsibleField
 }) => {
   const { updateTask, settings, tasks: allTasks } = useTasks();
-  const { isAdmin, isEffectiveAdmin, currentUser } = useAuth();
+  const { isAdmin, isEffectiveAdmin, currentUser, hasPermission } = useAuth();
   const { addNotification } = useToast();
   
   const storageKey = `lm_kanban_scroll_${activeView}_${currentDept}_${id}`;
@@ -116,6 +116,20 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
     e.preventDefault();
     e.stopPropagation();
     setIsOver(false);
+
+    let hasAccess = hasPermission(currentDept);
+    
+    // Granular check for Lucro/Reinf
+    if (currentDept === DemandType.LUCRO_REINF) {
+        if (statusField === 'statusLucro') hasAccess = hasPermission(DemandType.LUCRO) || hasPermission(DemandType.LUCRO_REINF);
+        if (statusField === 'statusReinf') hasAccess = hasPermission(DemandType.REINF) || hasPermission(DemandType.LUCRO_REINF);
+    }
+
+    if (!hasAccess) {
+        addNotification("Acesso Negado", "Você não tem permissão para mover tarefas neste departamento.", "error");
+        return;
+    }
+
     const taskId = e.dataTransfer.getData("taskId");
     if (!taskId) return;
 
@@ -131,7 +145,15 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
 
       await updateTask(task, statusField, newStatus);
     }
-  }, [allTasks, statusField, responsibleField, isEffectiveAdmin, currentUser, updateTask, addNotification]);
+  }, [allTasks, statusField, responsibleField, isEffectiveAdmin, currentUser, updateTask, addNotification, hasPermission, currentDept]);
+
+  const canEditColumn = useMemo(() => {
+      if (currentDept === DemandType.LUCRO_REINF) {
+          if (statusField === 'statusLucro') return hasPermission(DemandType.LUCRO) || hasPermission(DemandType.LUCRO_REINF);
+          if (statusField === 'statusReinf') return hasPermission(DemandType.REINF) || hasPermission(DemandType.LUCRO_REINF);
+      }
+      return hasPermission(currentDept);
+  }, [currentDept, statusField, hasPermission]);
 
   const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -201,6 +223,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
                                 density={settings.density}
                                 onClick={onCardClick}
                                 responsibleField={responsibleField}
+                                canEdit={canEditColumn}
                             />
                         ))}
                     </AnimatePresence>

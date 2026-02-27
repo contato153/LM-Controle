@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { CompanyTask, isFiscalFinished } from '../types';
+import { useTasks } from '../contexts/TasksContext';
 
 export interface ReportStats {
     totalCompanies: number;
@@ -53,6 +54,8 @@ export const useReportStats = (
         responsible: string;
     }
 ) => {
+    const { taxRegimes } = useTasks();
+
     const filteredTasks = useMemo(() => {
         return tasks.filter(t => {
             if (filters.regime && t.regime !== filters.regime) return false;
@@ -170,7 +173,7 @@ export const useReportStats = (
 
         const highPriorityPending = sourceData.filter(t => t.prioridade === 'ALTA' && (!isFinished(t.statusFiscal) || !isFinished(t.statusContabil))).length;
 
-        const regimes = ['LUCRO REAL', 'LUCRO PRESUMIDO', 'SIMPLES NACIONAL', 'NENHUM INFORMADO'];
+        const regimes = [...taxRegimes.map(r => r.name), 'NENHUM INFORMADO'];
         const regimeStats = regimes.map(regime => {
             const tasksRegime = sourceData.filter(t => (t.regime || 'NENHUM INFORMADO') === regime);
             let opsRegime = 0;
@@ -253,7 +256,7 @@ export const useReportStats = (
         });
 
         return { totalCompanies, pendingCompaniesCount, globalProgress, highPriorityPending, deptStats, regimeStats, teamStats, deadlines: { overdueCount, approachingCount, onTrackCount, noDateCount }, bottlenecks };
-    }, [filteredTasks, collaborators]);
+    }, [filteredTasks, collaborators, taxRegimes]);
 
     return { filteredTasks, stats };
 };

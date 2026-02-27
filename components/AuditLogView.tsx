@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useTasks } from '../contexts/TasksContext';
-import { Search, Shield, Calendar, User, FileText, Building2 } from 'lucide-react';
+import { Search, Shield, Calendar, User, FileText, Building2, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { parseRobustDate } from '../types';
 
 const formatLogDescription = (description: string) => {
     // Handle both old format: Alteração em [Name]: field -> value
@@ -67,18 +68,47 @@ const formatLogDescription = (description: string) => {
 };
 
 const AuditLogView: React.FC = () => {
-    const { logs = [] } = useTasks(); // logs is string[][] -> [Timestamp, Description, User, TaskID]
+    const { 
+        fetchLogsPage,
+        activeYear
+    } = useTasks();
+    
+    const [logs, setLogs] = useState<string[][]>([]);
+    const [totalCount, setTotalCount] = useState(0);
+    const [currentPage, setCurrentPage] = useState(0);
+    const [pageSize, setPageSize] = useState(50);
+    const [isLoading, setIsLoading] = useState(false);
+
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedUser, setSelectedUser] = useState('ALL');
     const [selectedCompany, setSelectedCompany] = useState('ALL');
     const [selectedMonth, setSelectedMonth] = useState('ALL');
-    const [displayLimit, setDisplayLimit] = useState(50);
+
+    const loadLogs = async (page: number) => {
+        setIsLoading(true);
+        try {
+            const result = await fetchLogsPage(page, pageSize);
+            setLogs(result.logs);
+            setTotalCount(result.totalCount || 0);
+            setCurrentPage(page);
+        } catch (error) {
+            console.error("Error loading logs:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadLogs(0);
+    }, [activeYear, pageSize]);
 
     const filterOptions = useMemo(() => {
         const users = new Set<string>();
         const companies = new Set<string>();
         const months = new Set<string>();
 
+        // We can only filter based on current page data if we don't have a global filter API
+        // For now, let's use the logs we have
         logs.forEach(log => {
             if (log[2]) users.add(log[2]);
             if (log[3]) companies.add(log[3]);
@@ -102,7 +132,7 @@ const AuditLogView: React.FC = () => {
     }, [logs]);
 
     const filteredLogs = useMemo(() => {
-        const filtered = logs.filter(log => {
+        return logs.filter(log => {
             const search = searchTerm.toLowerCase();
             const matchesSearch = (
                 (log[0] || '').toLowerCase().includes(search) || // Timestamp
@@ -124,32 +154,9 @@ const AuditLogView: React.FC = () => {
 
             return true;
         });
-
-        // Explicitly sort by timestamp descending (newest first)
-        return [...filtered].sort((a, b) => {
-            const parseDate = (s: string) => {
-                try {
-                    if (!s) return 0;
-                    // Handle formats like "DD/MM/YYYY, HH:mm:ss" or "DD/MM/YYYY HH:mm:ss"
-                    const cleanStr = s.replace(',', '').trim();
-                    const [d, t] = cleanStr.split(' ');
-                    const [day, month, year] = d.split('/').map(Number);
-                    const [h, m, s_] = t.split(':').map(Number);
-                    const date = new Date(year, month - 1, day, h, m, s_ || 0);
-                    return date.getTime();
-                } catch (e) {
-                    return 0;
-                }
-            };
-            const timeA = parseDate(a[0]);
-            const timeB = parseDate(b[0]);
-            return timeB - timeA;
-        });
     }, [logs, searchTerm, selectedUser, selectedCompany, selectedMonth]);
 
-    const displayedLogs = useMemo(() => {
-        return filteredLogs.slice(0, displayLimit);
-    }, [filteredLogs, displayLimit]);
+    const totalPages = Math.ceil(totalCount / pageSize);
 
     return (
         <div className="h-full flex flex-col bg-gray-50 dark:bg-black">
@@ -174,9 +181,9 @@ const AuditLogView: React.FC = () => {
                             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                             <input 
                                 type="text" 
-                                placeholder="Buscar..." 
+                                placeholder="Buscar nesta página..." 
                                 value={searchTerm}
-                                onChange={(e) => { setSearchTerm(e.target.value); setDisplayLimit(50); }}
+                                onChange={(e) => setSearchTerm(e.target.value)}
                                 className="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-zinc-800/50 border border-gray-100 dark:border-zinc-800 rounded-xl text-xs font-medium focus:ring-2 focus:ring-lm-yellow/50 outline-none transition-all"
                             />
                         </div>
@@ -185,7 +192,7 @@ const AuditLogView: React.FC = () => {
                             <User size={14} className="text-gray-400" />
                             <select 
                                 value={selectedUser}
-                                onChange={(e) => { setSelectedUser(e.target.value); setDisplayLimit(50); }}
+                                onChange={(e) => setSelectedUser(e.target.value)}
                                 className="bg-transparent text-xs font-bold text-gray-600 dark:text-gray-300 outline-none cursor-pointer w-full"
                             >
                                 <option value="ALL">Todos Usuários</option>
@@ -199,7 +206,7 @@ const AuditLogView: React.FC = () => {
                             <Building2 size={14} className="text-gray-400" />
                             <select 
                                 value={selectedCompany}
-                                onChange={(e) => { setSelectedCompany(e.target.value); setDisplayLimit(50); }}
+                                onChange={(e) => setSelectedCompany(e.target.value)}
                                 className="bg-transparent text-xs font-bold text-gray-600 dark:text-gray-300 outline-none cursor-pointer w-full"
                             >
                                 <option value="ALL">Todas Empresas</option>
@@ -213,7 +220,7 @@ const AuditLogView: React.FC = () => {
                             <Calendar size={14} className="text-gray-400" />
                             <select 
                                 value={selectedMonth}
-                                onChange={(e) => { setSelectedMonth(e.target.value); setDisplayLimit(50); }}
+                                onChange={(e) => setSelectedMonth(e.target.value)}
                                 className="bg-transparent text-xs font-bold text-gray-600 dark:text-gray-300 outline-none cursor-pointer w-full"
                             >
                                 <option value="ALL">Todos os Meses</option>
@@ -226,25 +233,30 @@ const AuditLogView: React.FC = () => {
 
                     {/* Table */}
                     <div className="flex-1 bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-800 overflow-hidden flex flex-col">
-                        <div className="overflow-x-auto custom-scrollbar flex-1">
+                        <div className="overflow-x-auto custom-scrollbar flex-1 relative">
+                            {isLoading && (
+                                <div className="absolute inset-0 bg-white/50 dark:bg-black/50 backdrop-blur-[1px] z-20 flex items-center justify-center">
+                                    <Loader2 className="animate-spin text-lm-yellow" size={32} />
+                                </div>
+                            )}
                             <table className="w-full text-left whitespace-nowrap">
-                                <thead className="bg-gray-50/80 dark:bg-zinc-800/50 text-gray-500 dark:text-gray-400 font-semibold text-xs uppercase tracking-wider sticky top-0 backdrop-blur-sm z-10">
+                                <thead className="bg-gray-50/80 dark:bg-zinc-800/50 text-gray-500 dark:text-gray-400 font-semibold text-xs uppercase tracking-wider sticky top-0 backdrop-blur-sm z-10 rounded-t-2xl">
                                     <tr>
-                                        <th className="px-6 py-4 border-b border-gray-100 dark:border-zinc-800 w-48">Data e Hora</th>
+                                        <th className="px-6 py-4 border-b border-gray-100 dark:border-zinc-800 w-48 first:rounded-tl-2xl">Data e Hora</th>
                                         <th className="px-6 py-4 border-b border-gray-100 dark:border-zinc-800 w-48">Usuário</th>
                                         <th className="px-6 py-4 border-b border-gray-100 dark:border-zinc-800">Ação Realizada</th>
-                                        <th className="px-6 py-4 border-b border-gray-100 dark:border-zinc-800 w-40">Empresa (ID)</th>
+                                        <th className="px-6 py-4 border-b border-gray-100 dark:border-zinc-800 w-40 last:rounded-tr-2xl">Empresa (ID)</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50 dark:divide-zinc-800">
-                                    {displayedLogs.length === 0 ? (
+                                    {filteredLogs.length === 0 ? (
                                         <tr>
                                             <td colSpan={4} className="px-6 py-12 text-center text-gray-400 dark:text-gray-600">
-                                                Nenhum registro encontrado.
+                                                {isLoading ? 'Carregando registros...' : 'Nenhum registro encontrado nesta página.'}
                                             </td>
                                         </tr>
                                     ) : (
-                                        displayedLogs.map((log, index) => (
+                                        filteredLogs.map((log, index) => (
                                             <tr 
                                                 key={index} 
                                                 className="hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors animate-depth-appear"
@@ -288,18 +300,52 @@ const AuditLogView: React.FC = () => {
                                 </tbody>
                             </table>
                         </div>
-                        {filteredLogs.length > displayLimit && (
-                            <div className="p-4 text-center border-t border-gray-100 dark:border-zinc-800">
+                        
+                        {/* Pagination Controls */}
+                        <div className="p-4 border-t border-gray-100 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900/50 flex flex-col sm:flex-row justify-between items-center gap-4">
+                            <div className="flex items-center gap-4">
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                    Total de <span className="font-bold text-gray-900 dark:text-white">{totalCount}</span> registros
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] uppercase font-bold text-gray-400">Exibir:</span>
+                                    <select 
+                                        value={pageSize}
+                                        onChange={(e) => setPageSize(Number(e.target.value))}
+                                        className="bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg px-2 py-1 text-xs font-bold outline-none"
+                                    >
+                                        <option value={20}>20</option>
+                                        <option value={50}>50</option>
+                                        <option value={100}>100</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-2">
                                 <button 
-                                    onClick={() => setDisplayLimit(prev => prev + 50)}
-                                    className="px-6 py-2 bg-gray-100 dark:bg-zinc-800 hover:bg-gray-200 dark:hover:bg-zinc-700 text-gray-600 dark:text-gray-300 rounded-xl text-xs font-bold transition-all"
+                                    onClick={() => loadLogs(currentPage - 1)}
+                                    disabled={currentPage === 0 || isLoading}
+                                    className="p-2 bg-white dark:bg-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-700 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-zinc-700 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-sm"
+                                    title="Página Anterior"
                                 >
-                                    Carregar mais registros...
+                                    <ChevronLeft size={18} />
+                                </button>
+                                
+                                <div className="flex items-center gap-1 px-4 py-2 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl shadow-sm">
+                                    <span className="text-xs font-bold text-gray-900 dark:text-white">Página {currentPage + 1}</span>
+                                    <span className="text-xs text-gray-400 mx-1">de</span>
+                                    <span className="text-xs font-bold text-gray-900 dark:text-white">{totalPages || 1}</span>
+                                </div>
+
+                                <button 
+                                    onClick={() => loadLogs(currentPage + 1)}
+                                    disabled={currentPage >= totalPages - 1 || isLoading}
+                                    className="p-2 bg-white dark:bg-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-700 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-zinc-700 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-sm"
+                                    title="Próxima Página"
+                                >
+                                    <ChevronRight size={18} />
                                 </button>
                             </div>
-                        )}
-                        <div className="px-6 py-3 border-t border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900/50 text-xs text-gray-400 dark:text-gray-500 flex justify-between items-center">
-                            <span>Mostrando {displayedLogs.length} de {filteredLogs.length} registros</span>
                         </div>
                     </div>
                 </div>

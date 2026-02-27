@@ -1,7 +1,7 @@
 
 import React, { memo, useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { CompanyTask, Department, isFiscalFinished, getEffectivePriority } from '../types';
+import { CompanyTask, DemandType, isFiscalFinished, getEffectivePriority } from '../types';
 import { Building2, AlertTriangle, User, Lock, Search, History, Calendar, Clock } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTasks } from '../contexts/TasksContext';
@@ -10,11 +10,12 @@ import { motion } from 'framer-motion';
 
 interface KanbanCardProps {
   task: CompanyTask;
-  currentDept: Department;
+  currentDept: DemandType;
   onDragStart: (e: React.DragEvent<HTMLDivElement>, id: string) => void;
   density?: 'comfortable' | 'compact';
   onClick?: (task: CompanyTask) => void;
   responsibleField: keyof CompanyTask; 
+  canEdit?: boolean;
 }
 
 // Helpers para Data
@@ -43,9 +44,10 @@ const KanbanCard: React.FC<KanbanCardProps> = memo(({
     onDragStart, 
     density = 'comfortable', 
     onClick, 
-    responsibleField
+    responsibleField,
+    canEdit: canEditProp
 }) => {
-  const { currentUser, isAdmin, isEffectiveAdmin } = useAuth();
+  const { currentUser, isAdmin, isEffectiveAdmin, hasPermission } = useAuth();
   const { updateTask, collaborators, onlineUsers } = useTasks();
   const { addNotification } = useToast();
 
@@ -55,6 +57,8 @@ const KanbanCard: React.FC<KanbanCardProps> = memo(({
   
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const canEdit = canEditProp !== undefined ? canEditProp : hasPermission(currentDept);
 
   useEffect(() => {
     const handleClose = (event: any) => {
@@ -90,7 +94,7 @@ const KanbanCard: React.FC<KanbanCardProps> = memo(({
       }
   }, [isDropdownOpen]);
 
-  const isContabilContext = currentDept === Department.CONTABIL; 
+  const isContabilContext = currentDept === DemandType.CONTABIL; 
   const fiscalFinished = isFiscalFinished(task.statusFiscal);
   const isBlocked = isContabilContext && !fiscalFinished && !isEffectiveAdmin;
 
@@ -261,8 +265,9 @@ const KanbanCard: React.FC<KanbanCardProps> = memo(({
             <div className="relative">
                 <select 
                     value={task.prioridade || ''}
+                    disabled={!canEdit}
                     onChange={(e) => { e.stopPropagation(); updateTask(task, 'prioridade', e.target.value) }}
-                    className={`text-[10px] font-bold uppercase py-0.5 pl-2 pr-5 rounded-md border-0 appearance-none outline-none focus:ring-2 focus:ring-lm-yellow/50 transition-shadow ${getPriorityStyle(effectivePriority)} cursor-pointer`}
+                    className={`text-[10px] font-bold uppercase py-0.5 pl-2 pr-5 rounded-md border-0 appearance-none outline-none focus:ring-2 focus:ring-lm-yellow/50 transition-shadow ${getPriorityStyle(effectivePriority)} cursor-pointer disabled:cursor-not-allowed disabled:opacity-50`}
                     onClick={(e) => e.stopPropagation()}
                 >
                     <option value="">Auto (Data)</option>
@@ -288,7 +293,8 @@ const KanbanCard: React.FC<KanbanCardProps> = memo(({
                 {/* Input - Com classe especial para clique em toda área */}
                 <input 
                     type="date" 
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 date-input-full"
+                    disabled={!canEdit}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 date-input-full disabled:cursor-not-allowed"
                     onChange={handleDateChange}
                     onKeyDown={(e) => e.preventDefault()}
                     onMouseDown={(e) => e.stopPropagation()} // Stop drag
@@ -310,6 +316,8 @@ const KanbanCard: React.FC<KanbanCardProps> = memo(({
              <div className="relative">
                 <button 
                     ref={buttonRef}
+                    disabled={!canEdit}
+                    title={!canEdit ? "Você não tem permissão para alterar o responsável" : "Alterar responsável"}
                     onClick={(e) => {
                         e.stopPropagation();
                         setIsDropdownOpen(!isDropdownOpen);
@@ -320,7 +328,7 @@ const KanbanCard: React.FC<KanbanCardProps> = memo(({
                         responsible 
                         ? 'bg-gray-50 dark:bg-zinc-800 border-gray-100 dark:border-zinc-700 hover:border-gray-300 dark:hover:border-zinc-500' 
                         : 'bg-red-50 dark:bg-red-900/10 border-red-100 dark:border-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/20'
-                    }`}
+                    } ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                     <User size={10} className={`${responsible ? "text-gray-400 dark:text-gray-500" : "text-red-400"} pointer-events-none`} />
                     <span className={`text-[10px] font-bold truncate max-w-[80px] ${responsible ? 'text-gray-600 dark:text-gray-300' : 'text-red-500'} pointer-events-none`}>

@@ -1,11 +1,11 @@
 
 
 import { useState, useMemo } from 'react';
-import { CompanyTask, Department, Collaborator } from '../types';
+import { CompanyTask, DemandType, Collaborator } from '../types';
 
 interface UseTaskFiltersProps {
   tasks: CompanyTask[];
-  currentDept: Department;
+  currentDept: DemandType;
   activeView: string;
   activeSubView: string;
   currentUser: Collaborator | null;
@@ -99,17 +99,17 @@ export const useTaskFilters = ({ tasks, currentDept, activeView, activeSubView, 
         let matchesResp = true;
         let responsible = '';
         switch (currentDept) {
-            case Department.FISCAL: responsible = t.respFiscal; break;
-            case Department.CONTABIL: responsible = activeSubView === 'BALANCO' ? t.respBalanco : t.respContabil; break;
-            case Department.LUCRO_REINF: responsible = activeSubView === 'REINF' ? t.respReinf : t.respLucro; break;
-            case Department.ECD: responsible = t.respECD; break;
-            case Department.ECF: responsible = t.respECF; break;
-            case Department.TODOS: break; 
+            case DemandType.FISCAL: responsible = t.respFiscal; break;
+            case DemandType.CONTABIL: responsible = activeSubView === 'BALANCO' ? t.respBalanco : t.respContabil; break;
+            case DemandType.LUCRO_REINF: responsible = activeSubView === 'REINF' ? t.respReinf : t.respLucro; break;
+            case DemandType.ECD: responsible = t.respECD; break;
+            case DemandType.ECF: responsible = t.respECF; break;
+            case DemandType.TODOS: break; 
             default: responsible = t.respFiscal;
         }
 
         if (filterResponsible) {
-             if (currentDept === Department.TODOS) {
+             if (currentDept === DemandType.TODOS) {
                  const anyResp = t.respFiscal || t.respContabil || t.respBalanco || t.respReinf || t.respLucro || t.respECD || t.respECF;
                  if (filterResponsible === 'HAS_RESPONSIBLE') matchesResp = !!anyResp;
                  else if (filterResponsible === 'NO_RESPONSIBLE') matchesResp = !anyResp;
@@ -128,12 +128,12 @@ export const useTaskFilters = ({ tasks, currentDept, activeView, activeSubView, 
             const check = (val: string) => val ? val.trim().toLowerCase() === uName : false;
 
             switch (currentDept) {
-                case Department.FISCAL: matchesMyObligations = check(t.respFiscal); break;
-                case Department.CONTABIL: matchesMyObligations = activeSubView === 'BALANCO' ? check(t.respBalanco) : check(t.respContabil); break;
-                case Department.LUCRO_REINF: matchesMyObligations = activeSubView === 'REINF' ? check(t.respReinf) : check(t.respLucro); break;
-                case Department.ECD: matchesMyObligations = check(t.respECD); break;
-                case Department.ECF: matchesMyObligations = check(t.respECF); break;
-                case Department.TODOS:
+                case DemandType.FISCAL: matchesMyObligations = check(t.respFiscal); break;
+                case DemandType.CONTABIL: matchesMyObligations = activeSubView === 'BALANCO' ? check(t.respBalanco) : check(t.respContabil); break;
+                case DemandType.LUCRO_REINF: matchesMyObligations = activeSubView === 'REINF' ? check(t.respReinf) : check(t.respLucro); break;
+                case DemandType.ECD: matchesMyObligations = check(t.respECD); break;
+                case DemandType.ECF: matchesMyObligations = check(t.respECF); break;
+                case DemandType.TODOS:
                 default:
                     // Verifica se o usuário é responsável por QUALQUER coisa na tarefa
                     matchesMyObligations = check(t.respFiscal) || 
