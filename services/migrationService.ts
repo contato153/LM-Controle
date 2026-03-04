@@ -1,7 +1,6 @@
 import { fetchAllDataBatch, getAccessToken, fetchWithRetry } from './sheetService';
 import { supabase } from './supabaseClient';
 import { SHEET_CONFIG } from '../config/sheetConfig';
-import { ADMIN_IDS } from '../config/app';
 
 export interface MigrationOptions {
     tasks: boolean;
@@ -51,7 +50,7 @@ export const migrateFromSheetsToSupabase = async (
                 codigo_externo: c.id,
                 nome: c.name,
                 departamento: c.department,
-                role: ADMIN_IDS.includes(c.id) ? 'admin' : 'user'
+                role: 'user' // Default to user, admin can be set manually in Supabase
             }));
 
             const { error: collabError } = await supabase

@@ -2,9 +2,14 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Run and deploy your AI Studio app
+# L&M Controle 3.1.0
 
-This contains everything you need to run your app locally.
+Este repositório contém o código-fonte do sistema de controle de obrigações contábeis e fiscais da L&M.
+
+### Repositório Oficial:
+[https://github.com/contato153/LM-Controle.git](https://github.com/contato153/LM-Controle.git)
+
+## Como Rodar Localmente
 
 View your app in AI Studio: https://ai.studio/apps/de1df479-8956-4dcc-aff2-ad223277d31f
 

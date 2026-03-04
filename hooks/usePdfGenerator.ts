@@ -36,6 +36,9 @@ interface PdfGeneratorConfig {
     filterResponsible: string;
     includeCharts?: boolean;
     includeTable?: boolean;
+    includeSummary?: boolean;
+    includeFiltersApplied?: boolean;
+    selectedColumns?: string[];
     orientation?: 'landscape';
 }
 
@@ -101,62 +104,69 @@ export const usePdfGenerator = () => {
             // --- BLOCO DE FILTROS APLICADOS ---
             let startY = config.reportSubtitle ? 42 : 35;
 
-            doc.setDrawColor(200, 200, 200);
-            doc.setFillColor(250, 250, 250);
-            doc.roundedRect(margin, startY, contentWidth, 20, 2, 2, 'FD');
+            if (config.includeFiltersApplied !== false) {
+                doc.setDrawColor(200, 200, 200);
+                doc.setFillColor(250, 250, 250);
+                doc.roundedRect(margin, startY, contentWidth, 20, 2, 2, 'FD');
 
-            doc.setFontSize(9);
-            doc.setFont("helvetica", "bold");
-            doc.setTextColor(50, 50, 50);
-            doc.text("FILTROS APLICADOS:", margin + 5, startY + 6);
+                doc.setFontSize(9);
+                doc.setFont("helvetica", "bold");
+                doc.setTextColor(50, 50, 50);
+                doc.text("FILTROS APLICADOS:", margin + 5, startY + 6);
 
-            doc.setFont("helvetica", "normal");
-            const contextLabel = { 'ALL': 'Geral', 'FISCAL': 'Fiscal', 'CONTABIL': 'Contábil', 'REINF': 'Reinf', 'LUCRO': 'Lucro', 'ECD': 'ECD', 'ECF': 'ECF' }[config.filterContext] || config.filterContext;
-            const statusLabel = config.filterStatus === 'ALL' ? 'Todos' : (config.filterStatus === 'PENDING' ? 'Pendentes' : 'Finalizados');
+                doc.setFont("helvetica", "normal");
+                const contextLabel = { 'ALL': 'Geral', 'FISCAL': 'Fiscal', 'CONTABIL': 'Contábil', 'REINF': 'Reinf', 'LUCRO': 'Lucro', 'ECD': 'ECD', 'ECF': 'ECF' }[config.filterContext] || config.filterContext;
+                const statusLabel = config.filterStatus === 'ALL' ? 'Todos' : (config.filterStatus === 'PENDING' ? 'Pendentes' : 'Finalizados');
 
-            // Linha 1 de filtros - Ajustar espaçamento baseado na largura
-            const colWidth = contentWidth / 4;
-            doc.text(`Contexto: ${contextLabel}`, margin + 5, startY + 14);
-            doc.text(`Status: ${statusLabel}`, margin + 5 + colWidth, startY + 14);
-            doc.text(`Regime: ${config.filterRegime || 'Todos'}`, margin + 5 + (colWidth * 2), startY + 14);
-            doc.text(`Responsável: ${config.filterResponsible || 'Todos'}`, margin + 5 + (colWidth * 3), startY + 14);
+                // Linha 1 de filtros - Ajustar espaçamento baseado na largura
+                const colWidth = contentWidth / 4;
+                doc.text(`Contexto: ${contextLabel}`, margin + 5, startY + 14);
+                doc.text(`Status: ${statusLabel}`, margin + 5 + colWidth, startY + 14);
+                doc.text(`Regime: ${config.filterRegime || 'Todos'}`, margin + 5 + (colWidth * 2), startY + 14);
+                doc.text(`Responsável: ${config.filterResponsible || 'Todos'}`, margin + 5 + (colWidth * 3), startY + 14);
+                
+                startY += 28;
+            } else {
+                startY += 10;
+            }
 
             // --- SUMÁRIO EXECUTIVO ---
-            startY += 28;
-
             const totalItems = filteredTasks.length;
-            const highPriority = filteredTasks.filter(t => t.prioridade === 'ALTA').length;
-
-            // Helper para contar concluídos na seleção atual
             const isFinished = (s: string) => ['FINALIZADA', 'ENVIADA', 'LUCRO LANÇADO', 'EFD ENVIADA', 'EFD RETIFICADA', 'DISPENSADA', 'NÃO SE APLICA'].includes((s || '').toUpperCase());
             const doneCount = filteredTasks.filter(t => isFinished(t.statusFiscal) && isFinished(t.statusContabil)).length; // Estimativa simples
-            const progress = totalItems > 0 ? Math.round((doneCount / totalItems) * 100) : 0;
 
-            // Cards de Resumo
-            const gap = 5;
-            const cardWidth = (contentWidth - (gap * 2)) / 3;
-            const cardHeight = 20;
+            if (config.includeSummary !== false) {
+                const highPriority = filteredTasks.filter(t => t.prioridade === 'ALTA').length;
+                const progress = totalItems > 0 ? Math.round((doneCount / totalItems) * 100) : 0;
 
-            // Card 1: Total
-            doc.setFillColor(colorDark[0], colorDark[1], colorDark[2]);
-            doc.roundedRect(margin, startY, cardWidth, cardHeight, 1, 1, 'F');
-            doc.setTextColor(255, 255, 255);
-            doc.setFontSize(8); doc.text("TOTAL LISTADO", margin + 5, startY + 6);
-            doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.text(`${totalItems} Empresas`, margin + 5, startY + 14);
+                // Cards de Resumo
+                const gap = 5;
+                const cardWidth = (contentWidth - (gap * 2)) / 3;
+                const cardHeight = 20;
 
-            // Card 2: Prioridade Alta
-            doc.setFillColor(220, 38, 38); // Vermelho
-            doc.roundedRect(margin + cardWidth + gap, startY, cardWidth, cardHeight, 1, 1, 'F');
-            doc.setTextColor(255, 255, 255);
-            doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.text("PRIORIDADE ALTA", margin + cardWidth + gap + 5, startY + 6);
-            doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.text(`${highPriority} Casos`, margin + cardWidth + gap + 5, startY + 14);
+                // Card 1: Total
+                doc.setFillColor(colorDark[0], colorDark[1], colorDark[2]);
+                doc.roundedRect(margin, startY, cardWidth, cardHeight, 1, 1, 'F');
+                doc.setTextColor(255, 255, 255);
+                doc.setFontSize(8); doc.text("TOTAL LISTADO", margin + 5, startY + 6);
+                doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.text(`${totalItems} Empresas`, margin + 5, startY + 14);
 
-            // Card 3: Progresso Geral (Estimado)
-            doc.setFillColor(colorYellow[0], colorYellow[1], colorYellow[2]);
-            doc.roundedRect(margin + (cardWidth * 2) + (gap * 2), startY, cardWidth, cardHeight, 1, 1, 'F');
-            doc.setTextColor(0, 0, 0);
-            doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.text("ESTIMATIVA DE CONCLUSÃO", margin + (cardWidth * 2) + (gap * 2) + 5, startY + 6);
-            doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.text(`${progress}% Concluído`, margin + (cardWidth * 2) + (gap * 2) + 5, startY + 14);
+                // Card 2: Prioridade Alta
+                doc.setFillColor(220, 38, 38); // Vermelho
+                doc.roundedRect(margin + cardWidth + gap, startY, cardWidth, cardHeight, 1, 1, 'F');
+                doc.setTextColor(255, 255, 255);
+                doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.text("PRIORIDADE ALTA", margin + cardWidth + gap + 5, startY + 6);
+                doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.text(`${highPriority} Casos`, margin + cardWidth + gap + 5, startY + 14);
+
+                // Card 3: Progresso Geral (Estimado)
+                doc.setFillColor(colorYellow[0], colorYellow[1], colorYellow[2]);
+                doc.roundedRect(margin + (cardWidth * 2) + (gap * 2), startY, cardWidth, cardHeight, 1, 1, 'F');
+                doc.setTextColor(0, 0, 0);
+                doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.text("ESTIMATIVA DE CONCLUSÃO", margin + (cardWidth * 2) + (gap * 2) + 5, startY + 6);
+                doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.text(`${progress}% Concluído`, margin + (cardWidth * 2) + (gap * 2) + 5, startY + 14);
+                
+                startY += 35;
+            }
 
             // --- GRÁFICOS ---
             if (config.includeCharts) {
@@ -198,33 +208,39 @@ export const usePdfGenerator = () => {
             if (config.includeTable !== false) {
                 startY += 15;
 
-                // Definir colunas baseado no contexto (Filtro)
-                let columnsToShow: string[] = ['id', 'name', 'cnpj', 'regime', 'prioridade'];
+                // Definir colunas baseado no contexto (Filtro) ou seleção manual
+                let columnsToShow: string[] = [];
 
-                switch (config.filterContext) {
-                    case 'FISCAL':
-                        columnsToShow = [...columnsToShow, 'respFiscal', 'statusFiscal', 'dueDate'];
-                        break;
-                    case 'CONTABIL':
-                        columnsToShow = [...columnsToShow, 'respContabil', 'statusContabil', 'dueDate'];
-                        break;
-                    case 'REINF':
-                        columnsToShow = [...columnsToShow, 'respReinf', 'statusReinf', 'dueDate'];
-                        break;
-                    case 'LUCRO':
-                        columnsToShow = [...columnsToShow, 'respLucro', 'statusLucro', 'dueDate'];
-                        break;
-                    case 'ECD':
-                        columnsToShow = [...columnsToShow, 'respECD', 'statusECD', 'dueDate'];
-                        break;
-                    case 'ECF':
-                        columnsToShow = [...columnsToShow, 'respECF', 'statusECF', 'dueDate'];
-                        break;
-                    case 'ALL':
-                    default:
-                        // Visão Geral Completa - Incluir todos os status
-                        columnsToShow = ['id', 'name', 'regime', 'prioridade', 'statusFiscal', 'statusContabil', 'statusReinf', 'statusLucro', 'statusECD', 'statusECF'];
-                        break;
+                if (config.selectedColumns && config.selectedColumns.length > 0) {
+                    columnsToShow = config.selectedColumns;
+                } else {
+                    columnsToShow = ['id', 'name', 'cnpj', 'regime', 'prioridade'];
+
+                    switch (config.filterContext) {
+                        case 'FISCAL':
+                            columnsToShow = [...columnsToShow, 'respFiscal', 'statusFiscal', 'dueDate'];
+                            break;
+                        case 'CONTABIL':
+                            columnsToShow = [...columnsToShow, 'respContabil', 'statusContabil', 'dueDate'];
+                            break;
+                        case 'REINF':
+                            columnsToShow = [...columnsToShow, 'respReinf', 'statusReinf', 'dueDate'];
+                            break;
+                        case 'LUCRO':
+                            columnsToShow = [...columnsToShow, 'respLucro', 'statusLucro', 'dueDate'];
+                            break;
+                        case 'ECD':
+                            columnsToShow = [...columnsToShow, 'respECD', 'statusECD', 'dueDate'];
+                            break;
+                        case 'ECF':
+                            columnsToShow = [...columnsToShow, 'respECF', 'statusECF', 'dueDate'];
+                            break;
+                        case 'ALL':
+                        default:
+                            // Visão Geral Completa - Incluir todos os status
+                            columnsToShow = ['id', 'name', 'regime', 'prioridade', 'statusFiscal', 'statusContabil', 'statusReinf', 'statusLucro', 'statusECD', 'statusECF'];
+                            break;
+                    }
                 }
 
                 const cols = AVAILABLE_COLUMNS.filter(col => columnsToShow.includes(col.id));

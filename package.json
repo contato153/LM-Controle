@@ -1,13 +1,18 @@
 {
   "name": "l&m-controle",
   "private": true,
-  "version": "3.1.0",
+  "version": "2.1.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/contato153/LM-Controle.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "lint": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "push": "bash push_to_github.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.97.0",

@@ -30,12 +30,18 @@ const ReportsDashboard: React.FC = () => {
         subtitle: string;
         includeCharts: boolean;
         includeTable: boolean;
+        includeSummary: boolean;
+        includeFiltersApplied: boolean;
+        selectedColumns: string[];
         orientation: 'landscape';
     }>({
         title: 'Relatório Gerencial de Obrigações',
         subtitle: '',
         includeCharts: true,
         includeTable: true,
+        includeSummary: true,
+        includeFiltersApplied: true,
+        selectedColumns: [],
         orientation: 'landscape',
     });
 
@@ -67,6 +73,9 @@ const ReportsDashboard: React.FC = () => {
             filterResponsible: filters.responsible,
             includeCharts: reportConfig.includeCharts,
             includeTable: reportConfig.includeTable,
+            includeSummary: reportConfig.includeSummary,
+            includeFiltersApplied: reportConfig.includeFiltersApplied,
+            selectedColumns: reportConfig.selectedColumns,
             orientation: reportConfig.orientation,
         }, () => setShowConfigModal(false));
     };

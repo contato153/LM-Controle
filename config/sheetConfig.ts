@@ -1,52 +1,34 @@
 
 
-// Configuration for interacting with the Google Sheets workbook.  The
-// values above are perfectly safe to commit (they describe only the public
-// spreadsheet structure), but they’re often overridden via environment
-// variables when running in different contexts (local vs staging vs prod).
-//
-// Vercel’s build environment will read `VITE_...` vars automatically, so we
-// provide sensible defaults here.  If you prefer, you can completely replace
-// this file in your own checkout with hard‑coded values; it’s no longer
-// ignored.
-
 export const SHEET_CONFIG = {
-  SPREADSHEET_ID:
-    import.meta.env.VITE_SHEET_SPREADSHEET_ID ||
-    '13WtzQH7HgtL7pCjJU43TpqaiO4DqTCbAiMsZhYYrrBE',
+  // ID extraído do link fornecido: https://docs.google.com/spreadsheets/d/13WtzQH7HgtL7pCjJU43TpqaiO4DqTCbAiMsZhYYrrBE/edit
+  SPREADSHEET_ID: '13WtzQH7HgtL7pCjJU43TpqaiO4DqTCbAiMsZhYYrrBE',
+  
+  // Abas e Intervalos
+  SHEET_NAME_DEMANDAS: 'Demandas',
+  // ALTERADO: Aumentando o range de leitura até AB para pegar a Data de Vencimento
+  RANGE_DEMANDAS: 'Demandas!A2:AB', 
+  
+  SHEET_NAME_COLABORADORES: 'Colaboradores',
+  RANGE_COLABORADORES: 'Colaboradores!A2:E', // Lê ID, Nome e tenta capturar Departamento mesmo se houver colunas extras
 
-  SHEET_NAME_DEMANDAS:
-    import.meta.env.VITE_SHEET_NAME_DEMANDAS || 'Demandas',
-  RANGE_DEMANDAS:
-    import.meta.env.VITE_SHEET_RANGE_DEMANDAS || 'Demandas!A2:AB',
+  // Nova aba de LOG
+  SHEET_NAME_LOG: 'LOG',
+  RANGE_LOG: 'LOG!A:D', // Data/Hora (A), Descrição (B), Nome Colaborador (C), ID Tarefa (D)
 
-  SHEET_NAME_COLABORADORES:
-    import.meta.env.VITE_SHEET_NAME_COLABORADORES || 'Colaboradores',
-  RANGE_COLABORADORES:
-    import.meta.env.VITE_SHEET_RANGE_COLABORADORES || 'Colaboradores!A2:E',
+  // Nova aba de Comentários (Chat)
+  SHEET_NAME_COMENTARIOS: 'Comentarios',
+  RANGE_COMENTARIOS: 'Comentarios!A:D', // ID Tarefa (A), Data/Hora (B), Autor (C), Mensagem (D)
 
-  SHEET_NAME_LOG:
-    import.meta.env.VITE_SHEET_NAME_LOG || 'LOG',
-  RANGE_LOG:
-    import.meta.env.VITE_SHEET_RANGE_LOG || 'LOG!A:D',
+  // Nova aba de Detalhes (Side Peek)
+  SHEET_NAME_DETALHES: 'Detalhes',
+  RANGE_DETALHES: 'Detalhes!A:D', // ID (A), Nome (B), Descrição (C), Checklist JSON (D)
 
-  SHEET_NAME_COMENTARIOS:
-    import.meta.env.VITE_SHEET_NAME_COMENTARIOS || 'Comentarios',
-  RANGE_COMENTARIOS:
-    import.meta.env.VITE_SHEET_RANGE_COMENTARIOS || 'Comentarios!A:D',
+  // Nova aba de Configurações
+  SHEET_NAME_CONFIG: 'Configurações',
+  RANGE_CONFIG: 'Configurações!A:C', // ID Usuario (A), Nome (B), JSON Config (C)
 
-  SHEET_NAME_DETALHES:
-    import.meta.env.VITE_SHEET_NAME_DETALHES || 'Detalhes',
-  RANGE_DETALHES:
-    import.meta.env.VITE_SHEET_RANGE_DETALHES || 'Detalhes!A:D',
-
-  SHEET_NAME_CONFIG:
-    import.meta.env.VITE_SHEET_NAME_CONFIG || 'Configurações',
-  RANGE_CONFIG:
-    import.meta.env.VITE_SHEET_RANGE_CONFIG || 'Configurações!A:C',
-
-  SHEET_NAME_NOTIF:
-    import.meta.env.VITE_SHEET_NAME_NOTIF || 'Notificacao',
-  RANGE_NOTIF:
-    import.meta.env.VITE_SHEET_RANGE_NOTIF || 'Notificacao!A:G'
+  // Nova aba de Notificações
+  SHEET_NAME_NOTIF: 'Notificacao',
+  RANGE_NOTIF: 'Notificacao!A:G' // ID (A), Destinatario (B), Remetente (C), TaskID (D), Msg (E), IsRead (F), Timestamp (G)
 };
