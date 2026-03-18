@@ -142,6 +142,42 @@ const MyDay: React.FC<MyDayProps> = ({ onNavigate }) => {
     }).slice(0, 10);
   }, [logs, tasks, currentUser]);
 
+  // 4. Tarefas Finalizadas (Hoje e Histórico)
+  const completedTasks = useMemo(() => {
+    if (!currentUser || !logs) return { today: 0, history: [] };
+    
+    const now = new Date();
+    const todayDay = now.getDate();
+    const todayMonth = now.getMonth();
+    const todayYear = now.getFullYear();
+
+    const finishedLogs = logs.filter(log => {
+        const description = log[1] || '';
+        const user = log[2] || '';
+        return user === currentUser.name && description.includes('FINALIZADA');
+    });
+
+    const todayCount = finishedLogs.filter(log => {
+        const logDate = parseRobustDate(log[0]);
+        return logDate.getDate() === todayDay && 
+               logDate.getMonth() === todayMonth && 
+               logDate.getFullYear() === todayYear;
+    }).length;
+
+    const history = finishedLogs.map((log, index) => ({
+        id: `comp-${index}`,
+        timestamp: log[0],
+        logDate: parseRobustDate(log[0]),
+        details: log[1],
+        taskId: log[3] || '',
+        taskName: tasks.find(t => t.id === log[3])?.name || ''
+    })).sort((a, b) => {
+        return b.logDate.getTime() - a.logDate.getTime();
+    }).slice(0, 10); // Last 10
+
+    return { today: todayCount, history };
+  }, [logs, currentUser, tasks]);
+
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Bom dia';
@@ -243,6 +279,10 @@ const MyDay: React.FC<MyDayProps> = ({ onNavigate }) => {
                     <div className="bg-gray-50 dark:bg-white/10 backdrop-blur-md border border-gray-100 dark:border-white/10 rounded-2xl p-4 min-w-[100px] text-center shadow-sm dark:shadow-none">
                         <div className="text-2xl font-bold text-gray-900 dark:text-white mb-1">{myMentions.filter(n => !n.isRead).length}</div>
                         <div className="text-xs font-bold text-lm-yellow-dark dark:text-lm-yellow uppercase tracking-wider">Novas Menções</div>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-white/10 backdrop-blur-md border border-gray-100 dark:border-white/10 rounded-2xl p-4 min-w-[100px] text-center shadow-sm dark:shadow-none">
+                        <div className="text-2xl font-bold text-gray-900 dark:text-white mb-1">{completedTasks.today}</div>
+                        <div className="text-xs font-bold text-green-600 dark:text-green-300 uppercase tracking-wider">Finalizadas Hoje</div>
                     </div>
                 </div>
             </div>
@@ -549,6 +589,39 @@ const MyDay: React.FC<MyDayProps> = ({ onNavigate }) => {
                                             </span>
                                         </div>
                                     )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* HISTÓRICO DE TAREFAS FINALIZADAS */}
+            <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                        <CheckSquare className="text-lm-yellow-dark dark:text-lm-yellow" size={24} />
+                        Histórico de Finalizadas
+                    </h2>
+                </div>
+                
+                <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-gray-100 dark:border-zinc-800 shadow-sm overflow-hidden flex flex-col max-h-[300px]">
+                    {completedTasks.history.length === 0 ? (
+                        <div className="p-8 text-center">
+                            <CheckSquare size={24} className="text-gray-400 mx-auto mb-2 opacity-50" />
+                            <p className="text-xs text-gray-500 dark:text-gray-400">Nenhuma tarefa finalizada no histórico.</p>
+                        </div>
+                    ) : (
+                        <div className="overflow-y-auto custom-scrollbar p-3 space-y-3">
+                            {completedTasks.history.map(comp => (
+                                <div key={comp.id} className="p-3 bg-gray-50 dark:bg-zinc-800/50 rounded-xl border border-gray-100 dark:border-zinc-800">
+                                    <div className="flex justify-between items-start mb-1">
+                                        <span className="text-xs font-bold text-gray-900 dark:text-white truncate">{comp.taskName}</span>
+                                        <span className="text-[10px] text-gray-400">{comp.timestamp.split(' ')[0]}</span>
+                                    </div>
+                                    <p className="text-xs text-gray-600 dark:text-gray-300 line-clamp-2">
+                                        {comp.details}
+                                    </p>
                                 </div>
                             ))}
                         </div>

@@ -1,6 +1,7 @@
 import React from 'react';
-import { Filter, FileText, ChevronDown } from 'lucide-react';
+import { Filter, FileText, ChevronDown, User } from 'lucide-react';
 import { useTasks } from '../../contexts/TasksContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface ReportsFiltersProps {
     filters: {
@@ -21,7 +22,14 @@ interface ReportsFiltersProps {
 
 export const ReportsFilters: React.FC<ReportsFiltersProps> = ({ filters, setFilters, uniqueResponsibles, setShowConfigModal }) => {
     const { taxRegimes } = useTasks();
+    const { currentUser } = useAuth();
     
+    const filterByMe = () => {
+        if (currentUser) {
+            setFilters(prev => ({ ...prev, responsible: currentUser.name }));
+        }
+    };
+
     return (
         <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-800 p-5 animate-enter">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
@@ -34,13 +42,22 @@ export const ReportsFilters: React.FC<ReportsFiltersProps> = ({ filters, setFilt
                         <p className="text-xs text-gray-500 dark:text-gray-400">Personalize a visualização dos dados</p>
                     </div>
                 </div>
-                <button
-                    onClick={() => setShowConfigModal(true)}
-                    className="px-5 py-2.5 bg-lm-dark dark:bg-lm-yellow text-white dark:text-lm-dark rounded-xl font-bold text-sm hover:opacity-90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-lm-dark/10 dark:shadow-lm-yellow/20 active:scale-95"
-                >
-                    <FileText size={18} />
-                    Exportar Relatório PDF
-                </button>
+                <div className="flex gap-2">
+                    <button
+                        onClick={filterByMe}
+                        className="px-4 py-2.5 bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-gray-300 rounded-xl font-bold text-sm hover:bg-gray-200 dark:hover:bg-zinc-700 transition-all flex items-center gap-2"
+                    >
+                        <User size={16} />
+                        Filtrar por mim
+                    </button>
+                    <button
+                        onClick={() => setShowConfigModal(true)}
+                        className="px-5 py-2.5 bg-lm-dark dark:bg-lm-yellow text-white dark:text-lm-dark rounded-xl font-bold text-sm hover:opacity-90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-lm-dark/10 dark:shadow-lm-yellow/20 active:scale-95"
+                    >
+                        <FileText size={18} />
+                        Exportar Relatório PDF
+                    </button>
+                </div>
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
