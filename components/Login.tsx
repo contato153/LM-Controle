@@ -43,21 +43,19 @@ const Login: React.FC = () => {
 
       <div className="relative z-10 w-full max-w-md mx-4 animate-slide-up">
         <div className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl rounded-2xl shadow-soft border border-white/50 dark:border-zinc-800 p-8 md:p-10 transition-colors">
-            
-            <div className="text-center mb-10">
+            <div className="text-center mb-8">
                 <div className="flex justify-center mb-6">
                     <img 
-                        src="https://i.imgur.com/jLQaW2W.png" 
-                        alt="L&M Logo" 
-                        className="h-20 w-auto object-contain drop-shadow-md dark:hidden"
+                        src="/logo-controle-light.png" 
+                        alt="L&M Logo Light" 
+                        className="w-full max-w-[260px] h-auto object-contain mx-auto dark:hidden"
                     />
                     <img 
-                        src="https://i.imgur.com/65bHdqS.png" 
+                        src="/logo-controle-dark.png" 
                         alt="L&M Logo Dark" 
-                        className="h-20 w-auto object-contain drop-shadow-md hidden dark:block"
+                        className="w-full max-w-[260px] h-auto object-contain mx-auto hidden dark:block"
                     />
                 </div>
-                <h1 className="text-3xl font-bold text-gray-900 dark:text-white tracking-tight mb-2">{APP_INFO.name}</h1>
                 <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">Gestão de Obrigações Fiscais & Contábeis</p>
             </div>
 

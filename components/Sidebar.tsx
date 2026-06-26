@@ -141,42 +141,41 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggleSidebar, activeView, se
   return (
     <div className="h-screen w-[280px] bg-white dark:bg-black border-r border-gray-200 dark:border-zinc-900 flex flex-col flex-shrink-0 transition-all duration-300 relative z-40">
       
-      <div className="px-6 py-8 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="px-6 py-6 border-b border-gray-100 dark:border-zinc-900">
+        <div className="flex justify-center w-full mb-4">
             <img 
-              src="https://i.imgur.com/jLQaW2W.png" 
-              alt="L&M Logo" 
-              className={`w-10 h-auto object-contain ${isDarkMode ? 'hidden' : 'block'}`}
+              src="/logo-controle-light.png" 
+              alt="L&M Controle Logo Light" 
+              className="w-full max-w-[160px] h-auto object-contain dark:hidden"
             />
             <img 
-              src="https://i.imgur.com/65bHdqS.png" 
-              alt="L&M Logo Dark" 
-              className={`w-10 h-auto object-contain ${isDarkMode ? 'block' : 'hidden'}`}
+              src="/logo-controle-dark.png" 
+              alt="L&M Controle Logo Dark" 
+              className="w-full max-w-[160px] h-auto object-contain hidden dark:block"
             />
-            <div className="flex flex-col">
-                <span className="font-extrabold text-gray-900 dark:text-white leading-none text-base tracking-tight">L&M Controle</span>
-                <span className="text-[10px] uppercase font-bold text-gray-400 dark:text-gray-500 tracking-wider mt-1">Assessoria Contábil</span>
-            </div>
         </div>
-        <div className="flex items-center gap-2">
-            <div className="relative" ref={notifRef}>
+        
+        <div className="flex items-center justify-end mt-2">
+            <div className="flex items-center gap-2">
+                <div className="relative" ref={notifRef}>
+                    <button 
+                        onClick={() => setShowNotifications(!showNotifications)}
+                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1.5 hover:bg-gray-50 dark:hover:bg-zinc-900 rounded-lg transition-all relative"
+                    >
+                        <Bell size={18} />
+                        {unreadCount > 0 && (
+                            <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-zinc-900"></span>
+                        )}
+                    </button>
+                    {showNotifications && <NotificationDropdown />}
+                </div>
                 <button 
-                    onClick={() => setShowNotifications(!showNotifications)}
-                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1.5 hover:bg-gray-50 dark:hover:bg-zinc-900 rounded-lg transition-all relative"
+                onClick={toggleSidebar}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1.5 hover:bg-gray-50 dark:hover:bg-zinc-900 rounded-lg transition-all"
                 >
-                    <Bell size={18} />
-                    {unreadCount > 0 && (
-                        <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-zinc-900"></span>
-                    )}
+                <ChevronsLeft size={18} />
                 </button>
-                {showNotifications && <NotificationDropdown />}
             </div>
-            <button 
-            onClick={toggleSidebar}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1.5 hover:bg-gray-50 dark:hover:bg-zinc-900 rounded-lg transition-all"
-            >
-            <ChevronsLeft size={18} />
-            </button>
         </div>
       </div>
 
